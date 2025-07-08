@@ -1006,7 +1006,7 @@
                 </option>
                 <option>
                     <name>IlinkTrustzoneImportLibraryOut</name>
-                    <state></state>
+                    <state>UAZ_Fuel_level_indicator_import_lib.o</state>
                 </option>
                 <option>
                     <name>OILinkExtraOption</name>
@@ -1120,6 +1120,9 @@
                     <name>$PROJ_DIR$\..\Core\Src\dma.c</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\Core\Src\fonts.c</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\Core\Src\freertos.c</name>
                 </file>
                 <file>
@@ -1133,6 +1136,9 @@
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\Core\Src\main.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\Core\Src\sh1106.c</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\Core\Src\stm32f1xx_hal_msp.c</name>

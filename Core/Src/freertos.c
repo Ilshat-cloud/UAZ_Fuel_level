@@ -26,7 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>
-
+#include "sh1106.h"
 
 #define M_PI 	3.1415926535f
 
@@ -39,8 +39,12 @@
 #define ANGLE_MIN_RAD   (ANGLE_MIN_DEG * (M_PI / 180.0f))
 #define ANGLE_MAX_RAD   (ANGLE_MAX_DEG * (M_PI / 180.0f))
 
-#define Y_MIN           -0.9848077530f   // -cos(10�)
-#define Y_MAX           -0.1736481777f   // -cos(80�)
+#define Y_MIN           -0.9848077530f   // -cos(10�)
+#define Y_MAX           -0.1736481777f   // -cos(80�)
+
+
+#define ADC_CHANNEL_COUNT 3
+#define ADC_AVG_DEPTH     10
 
 /* USER CODE END Includes */
 
@@ -65,6 +69,22 @@ typedef enum {
     Blynk_left,
     Blynk_warning,
 } Blynk_types;
+
+
+typedef struct
+{
+    uint16_t adc_raw;     // Текущее значение с АЦП
+    int16_t  value;       // Пересчитанное значение
+    uint16_t adc_min;     // Минимальное значение АЦП (калибровка)
+    uint16_t adc_max;     // Максимальное значение АЦП (калибровка)
+    int16_t  value_min;   // Минимум выходного значения (например, -1000)
+    int16_t  value_max;   // Максимум выходного значения (например, +1000)
+} AnalogSensor_t;
+
+void Flash_read();
+uint32_t Flash_write();
+FLASH_EraseInitTypeDef Erase;
+void DefaultAnalogSensors(void);
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -82,9 +102,17 @@ Right_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Warning_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 CAL={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
 extern IWDG_HandleTypeDef hiwdg;
+extern ADC_HandleTypeDef hadc1;
 Blynk_types current_blynk_flag=Blynk_off; 
 uint16_t adc_max=ADC_MAX;
 uint16_t adc_min=ADC_MIN;
+AnalogSensor_t Voltage;
+AnalogSensor_t Level1_ai;
+AnalogSensor_t Level2_ai;
+static uint16_t ADC_dma[ADC_CHANNEL_COUNT];                     // Данные от DMA
+static uint16_t adc_history[ADC_CHANNEL_COUNT][ADC_AVG_DEPTH]; // История выборок
+static uint8_t  adc_index = 0;                                  // Индекс текущей выборки
+static uint16_t adc_filtered[ADC_CHANNEL_COUNT];               // Усреднённые значения
 /* USER CODE END Variables */
 /* Definitions for Product_IDLE */
 osThreadId_t Product_IDLEHandle;
@@ -110,8 +138,16 @@ const osThreadAttr_t Blynk_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+static inline uint32_t flash_read(uint32_t address) {
+    return *(volatile uint32_t*)address;
+}
 void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
-static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min);
+//static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min);
+void AnalogSensor_StartCalibration(AnalogSensor_t* sensor);
+void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value);
+void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value);
+void ADC_ProcessNewSamples(void);
+
 /* USER CODE END FunctionPrototypes */
 
 void Start_Product_IDLE_Task(void *argument);
@@ -176,10 +212,18 @@ void MX_FREERTOS_Init(void) {
 void Start_Product_IDLE_Task(void *argument)
 {
   /* USER CODE BEGIN Start_Product_IDLE_Task */
+  static uint8_t cal_ongoing_flag=0;
+
   /* Infinite loop */
   for(;;)
   {
+    HAL_ADC_Stop_DMA(&hadc1);
+    HAL_ADC_Start_DMA(&hadc1,(uint32_t*)&ADC_dma,3);
     osDelay(10);
+    ADC_ProcessNewSamples();
+    AnalogSensor_Update(&Level1_ai,adc_filtered[0]);
+    AnalogSensor_Update(&Level2_ai,adc_filtered[1]);
+    AnalogSensor_Update(&Voltage,adc_filtered[2]);
     HAL_IWDG_Refresh(&hiwdg);
     buttin_proc_without_tim(&Warning_in,Warning_in_GPIO_Port,Warning_in_Pin);
     buttin_proc_without_tim(&Right_in,Right_in_GPIO_Port,Right_in_Pin);
@@ -196,6 +240,25 @@ void Start_Product_IDLE_Task(void *argument)
     if(Warning_in.pos_out){
       current_blynk_flag=Blynk_warning;
     }
+    
+    if(CAL.hold_counter>1000){
+      if(cal_ongoing_flag){
+        AnalogSensor_CalibrateMinMax(&Level1_ai,adc_filtered[0]);
+        AnalogSensor_CalibrateMinMax(&Level2_ai,adc_filtered[1]);
+      }else{
+        cal_ongoing_flag=1;
+        AnalogSensor_StartCalibration(&Level1_ai);
+        AnalogSensor_StartCalibration(&Level2_ai);
+      }
+       
+    }else if(cal_ongoing_flag){
+      cal_ongoing_flag=0;
+      Flash_write();
+    }
+       
+       
+       
+    
   }
   /* USER CODE END Start_Product_IDLE_Task */
 }
@@ -213,7 +276,7 @@ void Start_Led_task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    osDelay(100);
   }
   /* USER CODE END Start_Led_task */
 }
@@ -284,6 +347,9 @@ void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPI
   button->pos_current=HAL_GPIO_ReadPin(GPIOx,GPIO_Pin);
   if ((button->pos_previous==button->pos_current)&&(button->pos_current!=button->pos_normal)){
     button->pos_out=GPIO_PIN_SET;
+    if (button->hold_counter < 65534)
+      button->hold_counter++;
+    
   }else{
     button->pos_out=GPIO_PIN_RESET;
     button->hold_counter=0;
@@ -292,28 +358,189 @@ void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPI
 
 
 
-// ������� ���������� ������� ������������� ����������� 0�100%
-static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min)
+// линеаризация данных с АЦП
+void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value)
 {
-    // 1) ������������ �������� ���
-    if (adc_value < adc_min) adc_value = adc_min;
-    if (adc_value > adc_max) adc_value = adc_max;
+    sensor->adc_raw = new_adc_value;
 
-    // 2) �������� ������������: �������� ? ? [angle_min_rad�angle_max_rad]
-    float theta = ANGLE_MIN_RAD +
-                  (ANGLE_MAX_RAD - ANGLE_MIN_RAD) *
-                  ((float)(adc_value - adc_min) / (float)(adc_max - adc_min));
+    if (sensor->adc_max <= sensor->adc_min)
+    {
+        sensor->value = 0; // Ошибка калибровки
+        return;
+    }
 
-    // 3) ������� � ������ ��������
-    float y = -cosf(theta);
+    // Линейная интерполяция
+    int32_t scaled = (int32_t)(new_adc_value - sensor->adc_min) *
+                     (sensor->value_max - sensor->value_min);
+    scaled /= (sensor->adc_max - sensor->adc_min);
+    scaled += sensor->value_min;
 
-    // 4) ������������ � �������� [0�1]
-    float p = (y - Y_MIN) / (Y_MAX - Y_MIN);
-    if (p < 0.0f) p = 0.0f;
-    else if (p > 1.0f) p = 1.0f;
+    // Ограничим в пределах value_min и value_max
+    if (scaled < sensor->value_min) scaled = sensor->value_min;
+    if (scaled > sensor->value_max) scaled = sensor->value_max;
 
-    // 5) � ��������� 0�100 � ���������� �����������
-    return (uint8_t)(p * 100.0f + 0.5f);
+    sensor->value = (int16_t)scaled;
 }
+
+void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value)
+{
+    if (new_adc_value < sensor->adc_min || sensor->adc_min == 0xFFFF)
+    {
+        sensor->adc_min = new_adc_value;
+    }
+
+    if (new_adc_value > sensor->adc_max)
+    {
+        sensor->adc_max = new_adc_value;
+    }
+}
+
+void AnalogSensor_StartCalibration(AnalogSensor_t* sensor)
+{
+  if(sensor->adc_min<3000){
+    sensor->adc_min+= 1000;       // максимально возможное значение для старта поиска минимума
+  }
+  if(sensor->adc_max>1500){
+    sensor->adc_max-= 1000;      // минимально возможное значение для старта поиска максимума
+  }
+}
+
+
+uint32_t Flash_write(){
+  taskENTER_CRITICAL();
+  uint32_t flash_ret;
+  HAL_FLASH_Unlock();
+  Erase.TypeErase=FLASH_TYPEERASE_PAGES;
+  Erase.PageAddress=User_Page_Adress[0];
+  Erase.NbPages=1;  //1kBytes
+  //  Delay_switching backlight_on tooth_sp Deept_of_cut_mm Deept_of_cut_pulses M1
+  if (HAL_FLASHEx_Erase(&Erase, &flash_ret) != HAL_OK) {
+    HAL_FLASH_Lock();
+    taskEXIT_CRITICAL();
+    
+    return flash_ret;
+  }
+  // Упаковка данных кнопок (9 бит)
+  
+  // Запись данных
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[0], Voltage.adc_max<<16|Voltage.adc_min);
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[1], Voltage.value_max<<16|Voltage.value_min); 
+  
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[2], Level1_ai.adc_max<<16|Level1_ai.adc_min);
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[3], Level1_ai.value_max<<16|Level1_ai.value_min);
+  
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[4], Level2_ai.adc_max<<16|Level2_ai.adc_min);
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[5], Level2_ai.value_max<<16|Level2_ai.value_min);
+  
+  HAL_FLASH_Lock();
+  taskEXIT_CRITICAL();
+  return 0xFFFFFFFF; // Успешная запись
+  
+}
+
+void Flash_read(void) {
+    uint32_t temp;
+
+    // Проверка: если первая ячейка пустая — загрузить дефолтные значения
+    temp = flash_read(User_Page_Adress[0]);
+    if (temp == 0xFFFFFFFF) {
+        DefaultAnalogSensors();
+        return;
+    }
+
+    // ---- Voltage ----
+    Voltage.adc_max   = (temp >> 16) & 0xFFFF;
+    Voltage.adc_min   = temp & 0xFFFF;
+
+    temp = flash_read(User_Page_Adress[1]);
+    Voltage.value_max = (temp >> 16) & 0xFFFF;
+    Voltage.value_min = temp & 0xFFFF;
+
+    // ---- Level1_ai ----
+    temp = flash_read(User_Page_Adress[2]);
+    Level1_ai.adc_max   = (temp >> 16) & 0xFFFF;
+    Level1_ai.adc_min   = temp & 0xFFFF;
+
+    temp = flash_read(User_Page_Adress[3]);
+    Level1_ai.value_max = (temp >> 16) & 0xFFFF;
+    Level1_ai.value_min = temp & 0xFFFF;
+
+    // ---- Level2_ai ----
+    temp = flash_read(User_Page_Adress[4]);
+    Level2_ai.adc_max   = (temp >> 16) & 0xFFFF;
+    Level2_ai.adc_min   = temp & 0xFFFF;
+
+    temp = flash_read(User_Page_Adress[5]);
+    Level2_ai.value_max = (temp >> 16) & 0xFFFF;
+    Level2_ai.value_min = temp & 0xFFFF;
+}
+
+void DefaultAnalogSensors(void)
+{
+    Voltage.adc_min   = 200;
+    Voltage.adc_max   = 3900;
+    Voltage.value_min = -500;
+    Voltage.value_max = 1500;
+    Voltage.adc_raw   = 0;
+    Voltage.value     = 0;
+
+    Level1_ai.adc_min   = 200;
+    Level1_ai.adc_max   = 3900;
+    Level1_ai.value_min = -500;
+    Level1_ai.value_max = 1500;
+    Level1_ai.adc_raw   = 0;
+    Level1_ai.value     = 0;
+
+    Level2_ai.adc_min   = 200;
+    Level2_ai.adc_max   = 3900;
+    Level2_ai.value_min = -500;
+    Level2_ai.value_max = 1500;
+    Level2_ai.adc_raw   = 0;
+    Level2_ai.value     = 0;
+}
+
+
+void ADC_ProcessNewSamples(void)
+{
+    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ++ch)
+    {
+        adc_history[ch][adc_index] = ADC_dma[ch];
+    }
+
+    adc_index++;
+    if (adc_index >= ADC_AVG_DEPTH)
+        adc_index = 0;
+
+    // После накопления всех выборок можно усреднять
+    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ++ch)
+    {
+        uint32_t sum = 0;
+        for (int i = 0; i < ADC_AVG_DEPTH; ++i)
+        {
+            sum += adc_history[ch][i];
+        }
+        adc_filtered[ch] = sum / ADC_AVG_DEPTH;
+    }
+}
+//static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min)
+//{
+//    if (adc_value < adc_min) adc_value = adc_min;
+//    if (adc_value > adc_max) adc_value = adc_max;
+//
+//    // 2) для движения по кругу
+////    float theta = ANGLE_MIN_RAD +
+////                  (ANGLE_MAX_RAD - ANGLE_MIN_RAD) *
+////                  ((float)(adc_value - adc_min) / (float)(adc_max - adc_min));
+//    //float y = cosf(theta);
+//
+//    
+//    // 4) ������������ � �������� [0�1]
+//    float p = (y - Y_MIN) / (Y_MAX - Y_MIN);
+//    if (p < 0.0f) p = 0.0f;
+//    else if (p > 1.0f) p = 1.0f;
+//
+//    // 5) � ��������� 0�100 � ���������� �����������
+//    return (uint8_t)(p * 100.0f + 0.5f);
+//}
 /* USER CODE END Application */
 

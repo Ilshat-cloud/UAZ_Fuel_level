@@ -9,7 +9,15 @@ static SSD1306_t SSD1306;
 static int8_t ssd1306_WriteCommand(uint8_t command);
 static int8_t ssd1306_WriteData(uint8_t* data, uint16_t size);
 
+typedef enum {
+	SSD1306_STATUS_UNINITIALIZED = 0,
+	SSD1306_STATUS_INITIALIZING,
+	SSD1306_STATUS_OK,
+	SSD1306_STATUS_ERROR,
+	SSD1306_STATUS_RESTARTING
+} SSD1306_Status_t;
 
+static SSD1306_Status_t ssd1306_status = SSD1306_STATUS_UNINITIALIZED;
 
 
 static const uint8_t dota[128]={
@@ -47,9 +55,10 @@ static const uint8_t dota[128]={
 0x00,0x00,0x00,0x00};
 
 uint8_t ssd1306_Init(void) {
-        
+    ssd1306_status = SSD1306_STATUS_INITIALIZING;    
 	if (HAL_I2C_IsDeviceReady(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 3, 100) != HAL_OK)
 	{
+		ssd1306_status = SSD1306_STATUS_ERROR;
 		SSD1306.Initialized = 0;
 		/* Return false */
 		return 0;
@@ -58,31 +67,31 @@ uint8_t ssd1306_Init(void) {
         osDelay(100);
 	
 	/* Init LCD */
-	 ssd1306_WriteCommand(0xAE); //display off
-         ssd1306_WriteCommand(0xD5); //--set display clock divide ratio/oscillator frequency
-         ssd1306_WriteCommand(0x80); 
-         ssd1306_WriteCommand(0xA8);
-         ssd1306_WriteCommand(0x3F);
-         ssd1306_WriteCommand(0xD3);
-         ssd1306_WriteCommand(0x00);
-         ssd1306_WriteCommand(0x40);
-         ssd1306_WriteCommand(0x8D);
-         ssd1306_WriteCommand(0x10);
-         ssd1306_WriteCommand(0x20);
-         ssd1306_WriteCommand(0x00);
-         ssd1306_WriteCommand(0xA1);
-         ssd1306_WriteCommand(0xC8);
-         ssd1306_WriteCommand(0xDA);
-         ssd1306_WriteCommand(0x12);
-         ssd1306_WriteCommand(0x81);
-         ssd1306_WriteCommand(0xFF);
-         ssd1306_WriteCommand(0xD9);
-         ssd1306_WriteCommand(0x22);
-         ssd1306_WriteCommand(0xDB);
-         ssd1306_WriteCommand(0x40);
-         ssd1306_WriteCommand(0xA4);
-         ssd1306_WriteCommand(0xA6);
-         ssd1306_WriteCommand(0xAF);
+	ssd1306_WriteCommand(0xAE); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xD5); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x80); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xA8); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x3F); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xD3); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x00); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x40); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x8D); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x10); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x20); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x00); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xA1); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xC8); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xDA); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x12); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x81); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xFF); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xD9); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x22); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xDB); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0x40); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xA4); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xA6); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+	ssd1306_WriteCommand(0xAF); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
          
          
          
@@ -90,7 +99,7 @@ uint8_t ssd1306_Init(void) {
 	 ssd1306_Fill(White);
 	
 	/* Update screen */
-	ssd1306_UpdateScreen();
+	if (ssd1306_UpdateScreen() < 0) return 0;
 	
 	/* Set default values */
 	SSD1306.CurrentX = 0;
@@ -98,7 +107,7 @@ uint8_t ssd1306_Init(void) {
 	
 	/* Initialized OK */
 	SSD1306.Initialized = 1;
-	
+	ssd1306_status = SSD1306_STATUS_OK;
 	/* Return OK */
 	return 1;
 }
@@ -109,11 +118,11 @@ void ssd1306_Fill(SSD1306_COLOR color)
  
         uint16_t i;
 	/* Set memory */
-        uint8_t colot_t=(color==Black)?0x00:0xFF;
+		uint8_t color_t=(color==Black)?0x00:0xFF;
 	for (i=0; i<sizeof(SSD1306_Buffer);i++)
-        {
-          SSD1306_Buffer[i]=colot_t;
-        }
+		{
+		  SSD1306_Buffer[i]=color_t;
+		}
 }
 
 
@@ -124,17 +133,18 @@ int8_t ssd1306_UpdateScreen(void)
         if (HAL_I2C_IsDeviceReady(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 3, 100) != HAL_OK)
 	{
 		SSD1306.Initialized = 0;
+		ssd1306_status = SSD1306_STATUS_ERROR;
 		/* Return false */
 		return -1;
 	}
 
         for (i=0; i<8; i++)
         {
-          ssd1306_WriteCommand(0xB0+i);
-          ssd1306_WriteCommand(SETLOWCOLUMN);
-          ssd1306_WriteCommand(SETHIGHCOLUMN);
-          
-          ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * i], SSD1306_WIDTH);
+			ssd1306_WriteCommand(0xB0 + i); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+			ssd1306_WriteCommand(SETLOWCOLUMN); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+			ssd1306_WriteCommand(SETHIGHCOLUMN); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+
+			ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * i], SSD1306_WIDTH); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
           
         }
         return 0;
@@ -172,10 +182,15 @@ void ssd1306_Draw_dot_colum_line(uint8_t x, uint8_t y) {
 		return;
 	}
         uint16_t i;
-	for (i=(x+(y / 8) * SSD1306_WIDTH); i<(127-x+((y / 8) * SSD1306_WIDTH)); i++)
-		{
-			SSD1306_Buffer[i+((y / 8) * SSD1306_WIDTH)] |= 1 << (y % 8);;
-		}
+	uint16_t start = x + (y / 8) * SSD1306_WIDTH;
+	uint16_t end = 127 - x + (y / 8) * SSD1306_WIDTH;
+	if (end > sizeof(SSD1306_Buffer)) {
+		end = sizeof(SSD1306_Buffer);
+	}
+	for (i = start; i < end; i++)
+	{
+		SSD1306_Buffer[i] |= 1 << (y % 8);
+	}
 
 	
 }
@@ -193,7 +208,9 @@ static int8_t ssd1306_WriteCommand(uint8_t command)
   if (HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x00, 1, &command, 1, 10)==HAL_OK){
     return 0;
   }
+  ssd1306_status = SSD1306_STATUS_ERROR;
   return -1;
+  
 #endif
 }
 
@@ -207,7 +224,9 @@ static int8_t ssd1306_WriteData(uint8_t* data, uint16_t size)
   if (HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x40, 1, data, size, 100)==HAL_OK){
     return 0;
   }
+  ssd1306_status = SSD1306_STATUS_ERROR;
   return -1;
+
 #endif
 }
 #ifdef USE_DMA
@@ -269,11 +288,11 @@ void startScreen() {
 		{
 			if ((dota[i])&(0x01<<(7-j)))
 			{
-				ssd1306_DrawPixel(SSD1306.CurrentX + j+(i%4)*8, (SSD1306.CurrentY + i2),White);
+				ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), White);
 			} 
 			else 
 			{
-				ssd1306_DrawPixel(SSD1306.CurrentX + j+(i%4)*8, (SSD1306.CurrentY + i2), Black);
+				ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), Black);
 			}
                         
 		}
@@ -312,3 +331,67 @@ void ssd1306_SetCursor(uint8_t x, uint8_t y)
 	SSD1306.CurrentY = y;
 }
 
+SSD1306_Status_t ssd1306_GetStatus(void) {
+	return ssd1306_status;
+}
+
+void ssd1306_HardResetAndReinit(void) {
+	ssd1306_status = SSD1306_STATUS_RESTARTING;
+
+	// Понижаем питание (например, через транзистор или MOSFET)
+	HAL_GPIO_WritePin(SSD1306_RESET_GPIO_Port, SSD1306_RESET_Pin, GPIO_PIN_RESET);
+	osDelay(10); // подождать для гарантированного выключения
+
+	HAL_GPIO_WritePin(SSD1306_RESET_GPIO_Port, SSD1306_RESET_Pin, GPIO_PIN_SET);
+	osDelay(10); // подождать перед инициализацией
+
+	ssd1306_Init(); 
+}
+
+void DrawArrowLeft(uint8_t x, uint8_t y) {
+    for (uint8_t i = 0; i < 40; i++) {
+        for (uint8_t j = 0; j < 40; j++) {
+            if (
+                (j < 10 && i >= 15 && i <= 24) ||  // хвост
+                (j >= 10 && j < 25 && i >= 10 && i <= 30 && (i - 20) * 2 >= (j - 10) && (20 - i) * 2 >= (j - 10)) // треугольная голова
+            ) {
+                ssd1306_DrawPixel(x + j, y + i, White);
+            }
+        }
+    }
+}
+
+void DrawArrowRight(uint8_t x, uint8_t y) {
+    for (uint8_t i = 0; i < 40; i++) {
+        for (uint8_t j = 0; j < 40; j++) {
+            if (
+                (j >= 30 && i >= 15 && i <= 24) || // хвост
+                (j < 30 && j >= 15 && i >= 10 && i <= 30 && (i - 20) * 2 >= (30 - j) && (20 - i) * 2 >= (30 - j)) // треугольная голова
+            ) {
+                ssd1306_DrawPixel(x + j, y + i, White);
+            }
+        }
+    }
+}
+
+void DrawWarningTriangle(uint8_t x, uint8_t y) {
+    for (uint8_t i = 0; i < 40; i++) {
+        for (uint8_t j = 0; j < 40; j++) {
+            int16_t dy = i - 39; // основание внизу
+            int16_t mid = 20;
+
+            // Уравнение равнобедренного треугольника
+            if (dy >= 0 || dy < -35) continue;
+
+            float k = 35.0f / 20.0f;
+            int left = (int)(mid - (-dy) / k);
+            int right = (int)(mid + (-dy) / k);
+
+            if (j == left || j == right || i == 39) {
+                ssd1306_DrawPixel(x + j, y + i, White); // контур
+            } else if (j > left && j < right && i > 10) {
+                ssd1306_DrawPixel(x + j, y + i, White); // заливка
+            }
+        }
+    }
+}

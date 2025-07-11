@@ -22,13 +22,16 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
+#include "stm32f1xx_hal_flash.h" // Add this include for FLASH_EraseInitTypeDef
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>
 #include "sh1106.h"
 
+#ifndef M_PI
 #define M_PI 	3.1415926535f
+#endif
 
 #define ANGLE_MIN_DEG   10.0f
 #define ANGLE_MAX_DEG   80.0f
@@ -37,7 +40,7 @@
 #define ADC_MAX         4096
 
 #define ANGLE_MIN_RAD   (ANGLE_MIN_DEG * (M_PI / 180.0f))
-#define ANGLE_MAX_RAD   (ANGLE_MAX_DEG * (M_PI / 180.0f))
+#define Y_MIN           -0.9848077530f   // -cos(10 deg)
 
 #define Y_MIN           -0.9848077530f   // -cos(10�)
 #define Y_MAX           -0.1736481777f   // -cos(80�)
@@ -113,6 +116,8 @@ static uint16_t ADC_dma[ADC_CHANNEL_COUNT];                     // Данные 
 static uint16_t adc_history[ADC_CHANNEL_COUNT][ADC_AVG_DEPTH]; // История выборок
 static uint8_t  adc_index = 0;                                  // Индекс текущей выборки
 static uint16_t adc_filtered[ADC_CHANNEL_COUNT];               // Усреднённые значения
+uint8_t blynk_output=0;
+static uint8_t cal_ongoing_flag=0;
 /* USER CODE END Variables */
 /* Definitions for Product_IDLE */
 osThreadId_t Product_IDLEHandle;
@@ -212,8 +217,8 @@ void MX_FREERTOS_Init(void) {
 void Start_Product_IDLE_Task(void *argument)
 {
   /* USER CODE BEGIN Start_Product_IDLE_Task */
-  static uint8_t cal_ongoing_flag=0;
-
+  
+  Flash_read();
   /* Infinite loop */
   for(;;)
   {
@@ -231,6 +236,7 @@ void Start_Product_IDLE_Task(void *argument)
     buttin_proc_without_tim(&Fuel_level1_low,Fuel_level1_low_GPIO_Port,Fuel_level1_low_Pin);
     buttin_proc_without_tim(&Fuel_level2_low,Fuel_level2_low_GPIO_Port,Fuel_level2_low_Pin);
     buttin_proc_without_tim(&CAL,CAL_GPIO_Port,CAL_Pin);
+    current_blynk_flag=Blynk_off; // Сброс флага Blynk
     if(Right_in.pos_out){
       current_blynk_flag=Blynk_right;
     }
@@ -250,7 +256,6 @@ void Start_Product_IDLE_Task(void *argument)
         AnalogSensor_StartCalibration(&Level1_ai);
         AnalogSensor_StartCalibration(&Level2_ai);
       }
-       
     }else if(cal_ongoing_flag){
       cal_ongoing_flag=0;
       Flash_write();
@@ -273,10 +278,28 @@ void Start_Product_IDLE_Task(void *argument)
 void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
+     //----------Horse---------------
+  ssd1306_Init();
+  ssd1306_Fill(Black);
+  ssd1306_UpdateScreen();
+  // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
+  startScreen();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(32,16); 
+  startScreen();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(64,32); 
+  startScreen();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(96,16); 
+  startScreen();
+  ssd1306_Fill(Black);
+  //------------------------------------
   /* Infinite loop */
   for(;;)
   {
     osDelay(100);
+
   }
   /* USER CODE END Start_Led_task */
 }
@@ -291,7 +314,7 @@ void Start_Led_task(void *argument)
 void StartBlynkTask(void *argument)
 {
   /* USER CODE BEGIN StartBlynkTask */
-  uint8_t blynk_output=0;
+  
   /* Infinite loop */
   for(;;)
   {
@@ -342,6 +365,13 @@ void StartBlynkTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+/**
+ * @brief  Processes the state of a button without using a timer.
+ * @param  button: Pointer to the button structure to update.
+ * @param  GPIOx: GPIO port where the button is connected.
+ * @param  GPIO_Pin: GPIO pin number for the button.
+ * @note   Updates the button state, output, and hold counter based on pin readings.
+ */
 void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin){
   button->pos_previous=button->pos_current;
   button->pos_current=HAL_GPIO_ReadPin(GPIOx,GPIO_Pin);
@@ -479,22 +509,22 @@ void DefaultAnalogSensors(void)
 {
     Voltage.adc_min   = 200;
     Voltage.adc_max   = 3900;
-    Voltage.value_min = -500;
+    Voltage.value_min = 0;
     Voltage.value_max = 1500;
     Voltage.adc_raw   = 0;
     Voltage.value     = 0;
 
     Level1_ai.adc_min   = 200;
     Level1_ai.adc_max   = 3900;
-    Level1_ai.value_min = -500;
-    Level1_ai.value_max = 1500;
+    Level1_ai.value_min = 0;
+    Level1_ai.value_max = 100;
     Level1_ai.adc_raw   = 0;
     Level1_ai.value     = 0;
 
     Level2_ai.adc_min   = 200;
     Level2_ai.adc_max   = 3900;
-    Level2_ai.value_min = -500;
-    Level2_ai.value_max = 1500;
+    Level2_ai.value_min = 0;
+    Level2_ai.value_max = 100;
     Level2_ai.adc_raw   = 0;
     Level2_ai.value     = 0;
 }
@@ -522,25 +552,71 @@ void ADC_ProcessNewSamples(void)
         adc_filtered[ch] = sum / ADC_AVG_DEPTH;
     }
 }
-//static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min)
-//{
-//    if (adc_value < adc_min) adc_value = adc_min;
-//    if (adc_value > adc_max) adc_value = adc_max;
-//
-//    // 2) для движения по кругу
-////    float theta = ANGLE_MIN_RAD +
-////                  (ANGLE_MAX_RAD - ANGLE_MIN_RAD) *
-////                  ((float)(adc_value - adc_min) / (float)(adc_max - adc_min));
-//    //float y = cosf(theta);
-//
-//    
-//    // 4) ������������ � �������� [0�1]
-//    float p = (y - Y_MIN) / (Y_MAX - Y_MIN);
-//    if (p < 0.0f) p = 0.0f;
-//    else if (p > 1.0f) p = 1.0f;
-//
-//    // 5) � ��������� 0�100 � ���������� �����������
-//    return (uint8_t)(p * 100.0f + 0.5f);
-//}
+
+void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, bool calibration_mode)
+{
+    char buf[20];
+
+    ssd1306_Fill(Black);
+
+    // Линия 1
+    ssd1306_SetCursor(0, 0);
+    if (cal_ongoing_flag)
+        sprintf(buf, "L1: CAL");
+    else
+    {
+        int perc = level1->value;  // проценты уже есть
+        if (perc < 0) perc = 0;
+        if (perc > 100) perc = 100;
+        sprintf(buf, "L1: %d%%", perc);
+    }
+    ssd1306_WriteString(buf, Font11x18, White);
+
+    // Линия 2
+    ssd1306_SetCursor(0, 32);
+    if (cal_ongoing_flag)
+        sprintf(buf, "L2: CAL");
+    else
+    {
+        int perc = level2->value;
+        if (perc < 0) perc = 0;
+        if (perc > 100) perc = 100;
+        sprintf(buf, "L2: %d%%", perc);
+    }
+    ssd1306_WriteString(buf, Font11x18, White);
+
+    // Справа — напряжение или иконка поворотника
+    if (blynk_flag == Blynk_off)
+    {
+        int volt_perc = voltage->value;
+        if (volt_perc < 0) volt_perc = 0;
+        if (volt_perc > 100) volt_perc = 100;
+        sprintf(buf, "%d%%", volt_perc);
+        ssd1306_SetCursor(90, 0);
+        ssd1306_WriteString(buf, Font11x18, White);
+    }
+    else
+    {
+        uint8_t icon_x = 80; // Положение иконки
+        uint8_t icon_y = 12;
+        switch (blynk_flag)
+        {
+            case Blynk_right:
+                DrawArrowRight(icon_x, icon_y);
+                break;
+            case Blynk_left:
+                DrawArrowLeft(icon_x, icon_y);
+                break;
+            case Blynk_warning:
+                DrawWarningTriangle(icon_x, icon_y);
+                break;
+            default:
+                break;
+        }
+    }
+
+    ssd1306_UpdateScreen();
+}
+
 /* USER CODE END Application */
 

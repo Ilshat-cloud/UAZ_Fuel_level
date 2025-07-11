@@ -74,4 +74,6 @@ char ssd1306_WriteChar(char ch, FontDef Font, SSD1306_COLOR color);
 char ssd1306_WriteString(char* str, FontDef Font, SSD1306_COLOR color);
 void ssd1306_SetCursor(uint8_t x, uint8_t y);
 void ssd1306_Draw_dot_colum_line(uint8_t x, uint8_t y);
+SSD1306_Status_t ssd1306_GetStatus(void);
+void ssd1306_HardResetAndReinit(void);
 #endif

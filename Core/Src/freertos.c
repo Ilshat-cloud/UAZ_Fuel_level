@@ -28,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include <math.h>
 #include "sh1106.h"
+#include "stdio.h"
 
 #ifndef M_PI
 #define M_PI 	3.1415926535f
@@ -118,6 +119,7 @@ static uint8_t  adc_index = 0;                                  // Индекс 
 static uint16_t adc_filtered[ADC_CHANNEL_COUNT];               // Усреднённые значения
 uint8_t blynk_output=0;
 static uint8_t cal_ongoing_flag=0;
+
 /* USER CODE END Variables */
 /* Definitions for Product_IDLE */
 osThreadId_t Product_IDLEHandle;
@@ -553,7 +555,7 @@ void ADC_ProcessNewSamples(void)
     }
 }
 
-void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, bool calibration_mode)
+void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, uint8_t calibration_mode)
 {
     char buf[20];
 
@@ -570,7 +572,7 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
         if (perc > 100) perc = 100;
         sprintf(buf, "L1: %d%%", perc);
     }
-    ssd1306_WriteString(buf, Font11x18, White);
+    ssd1306_WriteString(buf, Font_11x18, White);
 
     // Линия 2
     ssd1306_SetCursor(0, 32);
@@ -583,7 +585,7 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
         if (perc > 100) perc = 100;
         sprintf(buf, "L2: %d%%", perc);
     }
-    ssd1306_WriteString(buf, Font11x18, White);
+    ssd1306_WriteString(buf, Font_11x18, White);
 
     // Справа — напряжение или иконка поворотника
     if (blynk_flag == Blynk_off)
@@ -593,22 +595,21 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
         if (volt_perc > 100) volt_perc = 100;
         sprintf(buf, "%d%%", volt_perc);
         ssd1306_SetCursor(90, 0);
-        ssd1306_WriteString(buf, Font11x18, White);
+        ssd1306_WriteString(buf, Font_11x18, White);
     }
     else
     {
-        uint8_t icon_x = 80; // Положение иконки
-        uint8_t icon_y = 12;
+        ssd1306_SetCursor(90, 0);
         switch (blynk_flag)
         {
             case Blynk_right:
-                DrawArrowRight(icon_x, icon_y);
+                DrawArrowRight(White);
                 break;
             case Blynk_left:
-                DrawArrowLeft(icon_x, icon_y);
+                DrawArrowLeft(White);
                 break;
             case Blynk_warning:
-                DrawWarningTriangle(icon_x, icon_y);
+                DrawWarningTriangle(White);
                 break;
             default:
                 break;

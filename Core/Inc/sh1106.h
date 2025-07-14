@@ -63,6 +63,13 @@
      uint8_t Inverted;
      uint8_t Initialized;
    } SSD1306_t;
+   typedef enum {
+	SSD1306_STATUS_UNINITIALIZED = 0,
+	SSD1306_STATUS_INITIALIZING,
+	SSD1306_STATUS_OK,
+	SSD1306_STATUS_ERROR,
+	SSD1306_STATUS_RESTARTING
+} SSD1306_Status_t;
 extern I2C_HandleTypeDef SSD1306_I2C_PORT;
 
 void startScreen(void);
@@ -76,4 +83,7 @@ void ssd1306_SetCursor(uint8_t x, uint8_t y);
 void ssd1306_Draw_dot_colum_line(uint8_t x, uint8_t y);
 SSD1306_Status_t ssd1306_GetStatus(void);
 void ssd1306_HardResetAndReinit(void);
+void DrawWarningTriangle(SSD1306_COLOR color);
+void DrawArrowLeft(SSD1306_COLOR color);
+void DrawArrowRight(SSD1306_COLOR color);
 #endif

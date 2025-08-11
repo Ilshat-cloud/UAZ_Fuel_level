@@ -442,10 +442,10 @@ void ssd1306_HardResetAndReinit(void) {
 	ssd1306_status = SSD1306_STATUS_RESTARTING;
 
 	// Понижаем питание (например, через транзистор или MOSFET)
-	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_SET);
 	osDelay(10); // подождать для гарантированного выключения
 
-	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_RESET);
 	osDelay(10); // подождать перед инициализацией
 
 	ssd1306_Init(); 

@@ -149,6 +149,7 @@ static inline uint32_t flash_read(uint32_t address) {
     return *(volatile uint32_t*)address;
 }
 void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
+void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, uint8_t calibration_mode);
 //static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min);
 void AnalogSensor_StartCalibration(AnalogSensor_t* sensor);
 void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value);
@@ -281,7 +282,7 @@ void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
      //----------Horse---------------
-  ssd1306_Init();
+  ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
   // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
@@ -301,7 +302,7 @@ void Start_Led_task(void *argument)
   for(;;)
   {
     osDelay(100);
-
+    DisplayLevelsAndStatus(&Level1_ai,&Level2_ai,&Voltage,current_blynk_flag,cal_ongoing_flag);
   }
   /* USER CODE END Start_Led_task */
 }
@@ -591,9 +592,9 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
     if (blynk_flag == Blynk_off)
     {
         int volt_perc = voltage->value;
-        if (volt_perc < 0) volt_perc = 0;
-        if (volt_perc > 100) volt_perc = 100;
-        sprintf(buf, "%d%%", volt_perc);
+        if (volt_perc < voltage->value_min) volt_perc = voltage->value_min;
+        if (volt_perc > voltage->value_max) volt_perc = voltage->value_max;
+        sprintf(buf, "%2.1f%v", volt_perc/10);
         ssd1306_SetCursor(90, 0);
         ssd1306_WriteString(buf, Font_11x18, White);
     }

@@ -72,6 +72,7 @@
 } SSD1306_Status_t;
 extern I2C_HandleTypeDef SSD1306_I2C_PORT;
 
+
 void startScreen(void);
 uint8_t ssd1306_Init(void);
 void ssd1306_Fill(SSD1306_COLOR color);
@@ -83,10 +84,5 @@ void ssd1306_SetCursor(uint8_t x, uint8_t y);
 void ssd1306_Draw_dot_colum_line(uint8_t x, uint8_t y);
 SSD1306_Status_t ssd1306_GetStatus(void);
 void ssd1306_HardResetAndReinit(void);
-void DrawWarningTriangle(SSD1306_COLOR color);
-void DrawArrowLeft(SSD1306_COLOR color);
-void DrawArrowRight(SSD1306_COLOR color);
-void DrawWarningTriangle_fill(SSD1306_COLOR color);
-void DrawArrowLeft_fill(SSD1306_COLOR color);
-void DrawArrowRight_fill(SSD1306_COLOR color);
+void DrawBitmap(const uint8_t *bitmap, SSD1306_COLOR color);
 #endif

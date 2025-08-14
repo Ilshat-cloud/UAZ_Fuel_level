@@ -86,4 +86,7 @@ void ssd1306_HardResetAndReinit(void);
 void DrawWarningTriangle(SSD1306_COLOR color);
 void DrawArrowLeft(SSD1306_COLOR color);
 void DrawArrowRight(SSD1306_COLOR color);
+void DrawWarningTriangle_fill(SSD1306_COLOR color);
+void DrawArrowLeft_fill(SSD1306_COLOR color);
+void DrawArrowRight_fill(SSD1306_COLOR color);
 #endif

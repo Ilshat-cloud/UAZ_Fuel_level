@@ -107,7 +107,8 @@ Warning_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 CAL={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
 extern IWDG_HandleTypeDef hiwdg;
 extern ADC_HandleTypeDef hadc1;
-Blynk_types current_blynk_flag=Blynk_off; 
+Blynk_types current_blynk_flag=Blynk_off;
+Blynk_types flag_for_led=Blynk_off; 
 uint16_t adc_max=ADC_MAX;
 uint16_t adc_min=ADC_MIN;
 AnalogSensor_t Voltage;
@@ -125,20 +126,20 @@ static uint8_t cal_ongoing_flag=0;
 osThreadId_t Product_IDLEHandle;
 const osThreadAttr_t Product_IDLE_attributes = {
   .name = "Product_IDLE",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Led_task */
 osThreadId_t Led_taskHandle;
 const osThreadAttr_t Led_task_attributes = {
   .name = "Led_task",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal5,
 };
 /* Definitions for Blynk */
 osThreadId_t BlynkHandle;
 const osThreadAttr_t Blynk_attributes = {
-  .name = "Blynk",
+  .name = "Blynk_task",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal3,
 };
@@ -227,12 +228,12 @@ void Start_Product_IDLE_Task(void *argument)
   {
     HAL_ADC_Stop_DMA(&hadc1);
     HAL_ADC_Start_DMA(&hadc1,(uint32_t*)&ADC_dma,3);
-    osDelay(10);
+    osDelay(50);
     ADC_ProcessNewSamples();
     AnalogSensor_Update(&Level1_ai,adc_filtered[0]);
     AnalogSensor_Update(&Level2_ai,adc_filtered[1]);
     AnalogSensor_Update(&Voltage,adc_filtered[2]);
-    HAL_IWDG_Refresh(&hiwdg);
+    //HAL_IWDG_Refresh(&hiwdg);
     buttin_proc_without_tim(&Warning_in,Warning_in_GPIO_Port,Warning_in_Pin);
     buttin_proc_without_tim(&Right_in,Right_in_GPIO_Port,Right_in_Pin);
     buttin_proc_without_tim(&Left_in,Left_in_GPIO_Port,Left_in_Pin);
@@ -321,7 +322,7 @@ void StartBlynkTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(333); 
+    osDelay(500); 
     switch (current_blynk_flag){
     case Blynk_off:
       blynk_output=0;
@@ -361,6 +362,11 @@ void StartBlynkTask(void *argument)
         HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_SET);
       }
       break;
+    }
+    if(blynk_output==0){
+      flag_for_led=Blynk_off;
+    }else{
+      flag_for_led=current_blynk_flag;
     }
   }
   /* USER CODE END StartBlynkTask */
@@ -510,24 +516,24 @@ void Flash_read(void) {
 
 void DefaultAnalogSensors(void)
 {
-    Voltage.adc_min   = 200;
-    Voltage.adc_max   = 3900;
+    Voltage.adc_min   = 1;
+    Voltage.adc_max   = 4096;
     Voltage.value_min = 0;
-    Voltage.value_max = 1500;
+    Voltage.value_max = 331;
     Voltage.adc_raw   = 0;
     Voltage.value     = 0;
 
-    Level1_ai.adc_min   = 200;
-    Level1_ai.adc_max   = 3900;
+    Level1_ai.adc_min   = 1;
+    Level1_ai.adc_max   = 4096;
     Level1_ai.value_min = 0;
-    Level1_ai.value_max = 100;
+    Level1_ai.value_max = 110;
     Level1_ai.adc_raw   = 0;
     Level1_ai.value     = 0;
 
-    Level2_ai.adc_min   = 200;
-    Level2_ai.adc_max   = 3900;
+    Level2_ai.adc_min   = 1;
+    Level2_ai.adc_max   = 4096;
     Level2_ai.value_min = 0;
-    Level2_ai.value_max = 100;
+    Level2_ai.value_max = 110;
     Level2_ai.adc_raw   = 0;
     Level2_ai.value     = 0;
 }
@@ -565,26 +571,26 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
     // Линия 1
     ssd1306_SetCursor(0, 0);
     if (cal_ongoing_flag)
-        sprintf(buf, "L1: CAL");
+        sprintf(buf, "L1:CAL");
     else
     {
         int perc = level1->value;  // проценты уже есть
         if (perc < 0) perc = 0;
         if (perc > 100) perc = 100;
-        sprintf(buf, "L1: %d%%", perc);
+        sprintf(buf, "L1:%d%%", perc);
     }
     ssd1306_WriteString(buf, Font_11x18, White);
 
     // Линия 2
-    ssd1306_SetCursor(0, 32);
+    ssd1306_SetCursor(0, 45);
     if (cal_ongoing_flag)
-        sprintf(buf, "L2: CAL");
+        sprintf(buf, "L2:CAL");
     else
     {
         int perc = level2->value;
         if (perc < 0) perc = 0;
         if (perc > 100) perc = 100;
-        sprintf(buf, "L2: %d%%", perc);
+        sprintf(buf, "L2:%d%%", perc);
     }
     ssd1306_WriteString(buf, Font_11x18, White);
 
@@ -594,29 +600,44 @@ void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, Anal
         int volt_perc = voltage->value;
         if (volt_perc < voltage->value_min) volt_perc = voltage->value_min;
         if (volt_perc > voltage->value_max) volt_perc = voltage->value_max;
-        sprintf(buf, "%2.1f%v", volt_perc/10);
-        ssd1306_SetCursor(90, 0);
+        uint8_t xxx=volt_perc/10;
+        uint8_t yyy=volt_perc%10;
+        sprintf(buf, "%d.%d", xxx,yyy);
+        ssd1306_SetCursor(80, 20);
         ssd1306_WriteString(buf, Font_11x18, White);
     }
     else
     {
-        ssd1306_SetCursor(90, 0);
-        switch (blynk_flag)
-        {
-            case Blynk_right:
-                DrawArrowRight(White);
-                break;
-            case Blynk_left:
-                DrawArrowLeft(White);
-                break;
-            case Blynk_warning:
-                DrawWarningTriangle(White);
-                break;
-            default:
-                break;
-        }
+      ssd1306_SetCursor(80, 8);
+      switch (blynk_flag)
+      {
+      case Blynk_right:
+//        if(current_blynk__){
+//          DrawArrowRight(White);
+//        }else{
+          DrawArrowRight_fill(White);
+//        }
+        break;
+      case Blynk_left:
+//        if(current_blynk__){
+//          DrawArrowLeft(White);
+//        }else{
+          DrawArrowLeft_fill(White);
+//        }
+        break;
+      case Blynk_warning:
+//        if(current_blynk__){
+//          DrawWarningTriangle(White);
+//        }else{
+          DrawWarningTriangle_fill(White);
+//        }
+        
+        break;
+      default:
+        break;
+      }
     }
-
+    
     ssd1306_UpdateScreen();
 }
 

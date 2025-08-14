@@ -357,11 +357,11 @@ void DrawArrowLeft(SSD1306_COLOR color) {
     for (uint8_t i = 0; i < 240; i++) {
         uint8_t i2 = i / 6;
         for (uint8_t j = 0; j < 8; j++) {
-//            if ((arrow_left[i]) & (0x01 << (7 - j))) {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
-//            } else {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
-//            }
+            if ((arrow_left[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
         }
     }
 }
@@ -370,11 +370,11 @@ void DrawArrowLeft_fill(SSD1306_COLOR color) {
     for (uint8_t i = 0; i < 240; i++) {
         uint8_t i2 = i / 6;
         for (uint8_t j = 0; j < 8; j++) {
-//            if ((arrow_left_fill[i]) & (0x01 << (7 - j))) {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
-//            } else {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
-//            }
+            if ((arrow_left_fill[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
         }
     }
 }
@@ -383,11 +383,11 @@ void DrawArrowRight(SSD1306_COLOR color) {
     for (uint8_t i = 0; i < 240; i++) {
         uint8_t i2 = i / 6;
         for (uint8_t j = 0; j < 8; j++) {
-//            if ((arrow_right[i]) & (0x01 << (7 - j))) {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
-//            } else {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
-//            }
+            if ((arrow_right[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6) * 8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
         }
     }
 }
@@ -409,11 +409,11 @@ void DrawWarningTriangle(SSD1306_COLOR color) {
     for (uint8_t i = 0; i < 240; i++) {
         uint8_t i2 = i / 6;  //0..48 X заполняется
         for (uint8_t j = 0; j < 8; j++) {
-//            if ((warning_triangle[i]) & (0x01 << (7 - j))) {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, color);
-//            } else {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, (~color)&0x01);
-//            }
+            if ((warning_triangle[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
         }
     }
 }
@@ -422,11 +422,24 @@ void DrawWarningTriangle_fill(SSD1306_COLOR color) {
     for (uint8_t i = 0; i < 240; i++) {
         uint8_t i2 = i / 6;  //0..48 X заполняется
         for (uint8_t j = 0; j < 8; j++) {
-//            if ((warning_triangle_fill[i]) & (0x01 << (7 - j))) {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, color);
-//            } else {
-//                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, (~color)&0x01);
-//            }
+            if ((warning_triangle_fill[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
+        }
+    }
+}
+
+void DrawBitmap(const uint8_t *bitmap, SSD1306_COLOR color) {
+    for (uint8_t i = 0; i < 240; i++) {
+        uint8_t i2 = i / 6;  //0..48 X заполняется
+        for (uint8_t j = 0; j < 8; j++) {
+            if ((bitmap[i]) & (0x01 << (7 - j))) {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, color);
+            } else {
+                ssd1306_DrawPixel(SSD1306.CurrentX + j + ((i % 6)*8), SSD1306.CurrentY + i2, (~color)&0x01);
+            }
         }
     }
 }

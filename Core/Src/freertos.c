@@ -137,22 +137,22 @@ static uint8_t cal_ongoing_flag=0;
 osThreadId_t Product_IDLEHandle;
 const osThreadAttr_t Product_IDLE_attributes = {
   .name = "Product_IDLE",
-  .stack_size = 256* 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Led_task */
 osThreadId_t Led_taskHandle;
 const osThreadAttr_t Led_task_attributes = {
   .name = "Led_task",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityBelowNormal5,
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal,
 };
 /* Definitions for Blynk */
 osThreadId_t BlynkHandle;
 const osThreadAttr_t Blynk_attributes = {
-  .name = "Blynk_task",
+  .name = "Blynk",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal3,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -244,7 +244,7 @@ void Start_Product_IDLE_Task(void *argument)
     AnalogSensor_Update(&Level1_ai,adc_filtered[0]);
     AnalogSensor_Update(&Level2_ai,adc_filtered[1]);
     AnalogSensor_Update(&Voltage,adc_filtered[2]);
-    //HAL_IWDG_Refresh(&hiwdg);
+    HAL_IWDG_Refresh(&hiwdg);
     buttin_proc_without_tim(&Warning_in,Warning_in_GPIO_Port,Warning_in_Pin);
     buttin_proc_without_tim(&Right_in,Right_in_GPIO_Port,Right_in_Pin);
     buttin_proc_without_tim(&Left_in,Left_in_GPIO_Port,Left_in_Pin);

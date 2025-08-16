@@ -15,7 +15,7 @@ static int8_t ssd1306_WriteData(uint8_t* data, uint16_t size);
 static SSD1306_Status_t ssd1306_status = SSD1306_STATUS_UNINITIALIZED;
 
 
-static  const  uint8_t dota[128]={
+static  const  uint8_t dota[128] @ ".rodata"={
 0x00,0x00,0x00,0x00,
 0x00,0x00,0x00,0x00,
 0x00,0x00,0x01,0x80,
@@ -276,25 +276,26 @@ char ssd1306_WriteChar(char ch, FontDef Font, SSD1306_COLOR color)
 //------------------------startScreen-------------------
 void startScreen() {
   uint8_t i;
-        uint8_t j;
-	for (i = 0; i < 128; i++)
-	{       
-                uint8_t i2=i/4;
-		for (j = 0; j < 8; j++)
-		{
-			if ((dota[i])&(0x01<<(7-j)))
-			{
-				ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), White);
-			} 
-			else 
-			{
-				ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), Black);
-			}
-                        
-		}
-	}
-  ssd1306_UpdateScreen();
-  osDelay(200);
+  uint8_t j;
+  for (i = 0; i < 128; i++)
+  {       
+    uint8_t i2=i/4;
+    for (j = 0; j < 8; j++)
+    {
+      if ((dota[i])&(0x01<<(7-j)))
+      {
+        ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), White);
+      } 
+      else 
+      {
+        ssd1306_DrawPixel((SSD1306.CurrentX + j + ((i % 4) * 8)), (SSD1306.CurrentY + i2), Black);
+      }
+      
+    }
+  }
+  if(ssd1306_UpdateScreen()>-1){
+    osDelay(200);
+  }
 }
 //
 //  Write full string to screenbuffer

@@ -336,6 +336,8 @@ void Start_Led_task(void *argument)
   /* USER CODE BEGIN Start_Led_task */
   uint8_t buffer[240];
   //----------Horse---------------
+
+  
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
@@ -385,18 +387,18 @@ void Start_Led_task(void *argument)
     }
     if((Fuel_level1_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==2)){
       if(reverse_in_sequence==2){
-        ssd1306_WriteString(buf, Font_11x18, Black);
+        ssd1306_WriteString(buf, Font_16x26, Black);
       }else{
-        ssd1306_WriteString(buf, Font_11x18, White);
+        ssd1306_WriteString(buf, Font_16x26, White);
       }
     }else{
-      ssd1306_WriteString(buf, Font_11x18, Black);
+      ssd1306_WriteString(buf, Font_16x26, Black);
     }
     
      
     
     // Линия 2
-    ssd1306_SetCursor(0, 45);
+    ssd1306_SetCursor(0, 37);
     if (cal_ongoing_flag)
       sprintf(buf, "L2:CAL");
     else
@@ -419,12 +421,12 @@ void Start_Led_task(void *argument)
     }
     if((Fuel_level2_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==3)){
       if(reverse_in_sequence==3){
-        ssd1306_WriteString(buf, Font_11x18, Black);
+        ssd1306_WriteString(buf, Font_16x26, Black);
       }else{
-        ssd1306_WriteString(buf, Font_11x18, White);
+        ssd1306_WriteString(buf, Font_16x26, White);
       }
     }else{
-      ssd1306_WriteString(buf, Font_11x18, Black);
+      ssd1306_WriteString(buf, Font_16x26, Black);
     }
     
     // Справа — напряжение или иконка поворотника

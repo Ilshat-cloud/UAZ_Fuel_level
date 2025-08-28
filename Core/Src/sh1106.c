@@ -63,31 +63,54 @@ uint8_t ssd1306_Init(void) {
         osDelay(100);
 	
 	/* Init LCD */
-	ssd1306_WriteCommand(0xAE); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xD5); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x80); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xA8); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x3F); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xD3); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x00); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x40); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x8D); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x10); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x20); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x00); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xA1); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xC8); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xDA); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x12); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x81); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xFF); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xD9); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x22); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xDB); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0x40); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xA4); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xA6); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
-	ssd1306_WriteCommand(0xAF); if (ssd1306_status == SSD1306_STATUS_ERROR) return 0;
+        ssd1306_WriteCommand(0xAE); // Display OFF
+        
+        ssd1306_WriteCommand(0xD5); // Set Display Clock Divide Ratio/Oscillator Frequency
+        ssd1306_WriteCommand(0x80); // Suggested value
+        
+        ssd1306_WriteCommand(0xA8); // Set Multiplex Ratio
+        ssd1306_WriteCommand(0x3F); // 1/64 duty
+        
+        ssd1306_WriteCommand(0xD3); // Set Display Offset
+        ssd1306_WriteCommand(0x00); // !!! сдвиг на 1 чтобы убрать артефакт
+        
+        ssd1306_WriteCommand(0x40 | 0x00); // Set Display Start Line = 0
+        
+        ssd1306_WriteCommand(0x8D); // Charge Pump
+        ssd1306_WriteCommand(0x14); // Enable
+        
+        ssd1306_WriteCommand(0x20); // Memory Addressing Mode
+        ssd1306_WriteCommand(0x00); // Horizontal Addressing Mode
+        
+        ssd1306_WriteCommand(0xA1); // Segment Re-map (A0=normal, A1=flip horizontally)
+        ssd1306_WriteCommand(0xC8); // COM Output Scan Direction (C0=normal, C8=flip vertically)
+        
+        ssd1306_WriteCommand(0xDA); // COM Pins Hardware Configuration
+        ssd1306_WriteCommand(0x12);
+        
+        ssd1306_WriteCommand(0x81); // Contrast Control
+        ssd1306_WriteCommand(0x7F);
+        
+        ssd1306_WriteCommand(0xD9); // Pre-charge Period
+        ssd1306_WriteCommand(0xF1);
+        
+        ssd1306_WriteCommand(0xDB); // VCOMH Deselect Level
+        ssd1306_WriteCommand(0x30);
+        
+        ssd1306_WriteCommand(0xA4); // Entire Display ON (resume RAM content display)
+        ssd1306_WriteCommand(0xA6); // Normal Display (A7=Inverse)
+        
+        // Установка диапазона колонок (с поправкой)
+        ssd1306_WriteCommand(0x21); 
+        ssd1306_WriteCommand(0x00 ); // Start column
+        ssd1306_WriteCommand(0x7F); // End column
+        
+        // Установка диапазона страниц
+        ssd1306_WriteCommand(0x22);
+        ssd1306_WriteCommand(0x00); // Start page
+        ssd1306_WriteCommand(0x07); // End page
+        
+        ssd1306_WriteCommand(0xAF); // Display ON
          
          
          
@@ -122,29 +145,30 @@ void ssd1306_Fill(SSD1306_COLOR color)
 }
 
 
-int8_t ssd1306_UpdateScreen(void) 
+int8_t ssd1306_UpdateScreen(void)
 {
- 
-        uint8_t i;
-        if (HAL_I2C_IsDeviceReady(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 3, 100) != HAL_OK)
-	{
-		SSD1306.Initialized = 0;
-		ssd1306_status = SSD1306_STATUS_ERROR;
-		/* Return false */
-		return -1;
-	}
+    uint8_t i;
+    if (HAL_I2C_IsDeviceReady(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 3, 100) != HAL_OK)
+    {
+        SSD1306.Initialized = 0;
+        ssd1306_status = SSD1306_STATUS_ERROR;
+        return -1;
+    }
 
-        for (i=0; i<8; i++)
-        {
-			ssd1306_WriteCommand(0xB0 + i); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
-			ssd1306_WriteCommand(SETLOWCOLUMN); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
-			ssd1306_WriteCommand(SETHIGHCOLUMN); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+    for (i = 0; i < 8; i++)
+    {
+//        uint8_t start = 0; // 0..127 — менять сюда если нужно другой сдвиг
+//        uint8_t low  = (start & 0x0F);              // 0x00..0x0F
+//        uint8_t high = 0x10 | ((start >> 4) & 0x0F); // 0x10..0x1F
 
-			ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * i], SSD1306_WIDTH); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
-          
-        }
-        return 0;
-        
+        ssd1306_WriteCommand(0xB0 + i); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+        ssd1306_WriteCommand(0);  if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+        ssd1306_WriteCommand(0x10); if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+
+        ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * i], SSD1306_WIDTH);
+        if (ssd1306_status == SSD1306_STATUS_ERROR) return -1;
+    }
+    return 0;
 }
 
 
@@ -337,10 +361,10 @@ void ssd1306_HardResetAndReinit(void) {
 
 	// Понижаем питание (например, через транзистор или MOSFET)
 	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_SET);
-	osDelay(10); // подождать для гарантированного выключения
+	osDelay(200); // подождать для гарантированного выключения
 
 	HAL_GPIO_WritePin(Reboot_LCD_GPIO_Port, Reboot_LCD_Pin, GPIO_PIN_RESET);
-	osDelay(10); // подождать перед инициализацией
+	osDelay(300); // подождать перед инициализацией
 
 	ssd1306_Init(); 
 }

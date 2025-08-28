@@ -36,8 +36,8 @@
 /* I2C address */
 //#define USE_DMA					// uncomment if used I2C DMA mode
 #ifndef SSD1306_I2C_ADDR
-#define SSD1306_I2C_ADDR         0x78
-//#define SSD1306_I2C_ADDR       0x7A
+#define SSD1306_I2C_ADDR         0x78           //1.3 sh1106  work        
+//#define SSD1306_I2C_ADDR       0x7A           //1.3 sh1106        
 #endif
 
 /* SSD1306 settings */

@@ -5,7 +5,7 @@
 /* SSD1306 data buffer */
 static uint8_t SSD1306_Buffer[SSD1306_WIDTH * SSD1306_HEIGHT / 8];
 /* Private variable */
-static SSD1306_t SSD1306;
+SSD1306_t SSD1306;
 
 static int8_t ssd1306_WriteCommand(uint8_t command);
 static int8_t ssd1306_WriteData(uint8_t* data, uint16_t size);
@@ -381,4 +381,19 @@ void DrawBitmap(const uint8_t *bitmap, SSD1306_COLOR color) {
             }
         }
     }
+}
+void DrawBitmap_32(const uint8_t *bitmap, SSD1306_COLOR color) {
+
+  for (uint8_t i = 0; i < 128; i++) {
+    uint8_t row  = i / 4;  //0..48 X заполняется
+    uint8_t col_block = (i % 4)*8;     // Блок колонок (0..5)
+    for (uint8_t j = 0; j < 8; j++) {
+      if ((bitmap[i]) & (0x01 << (7 - j))) {
+        ssd1306_DrawPixel(SSD1306.CurrentX + j + col_block, SSD1306.CurrentY + row, color);
+      } else {
+        ssd1306_DrawPixel(SSD1306.CurrentX + j + col_block, SSD1306.CurrentY + row, (~color)&0x01);
+      }
+    }
+  }
+  
 }

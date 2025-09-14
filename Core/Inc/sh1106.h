@@ -85,4 +85,5 @@ void ssd1306_Draw_dot_colum_line(uint8_t x, uint8_t y);
 SSD1306_Status_t ssd1306_GetStatus(void);
 void ssd1306_HardResetAndReinit(void);
 void DrawBitmap(const uint8_t *bitmap, SSD1306_COLOR color);
+void DrawBitmap_32(const uint8_t *bitmap, SSD1306_COLOR color);
 #endif

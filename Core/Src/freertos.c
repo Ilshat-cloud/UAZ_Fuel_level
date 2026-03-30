@@ -282,6 +282,13 @@ void Start_Product_IDLE_Task(void *argument)
       }
     }else if(cal_ongoing_flag){
       cal_ongoing_flag=0;
+      level1_ai.adc_max=level1_ai.adc_max+10;
+      if(level1_ai.adc_min>10){
+        level1_ai.adc_min=level1_ai.adc_min-10;
+      }else{
+        level1_ai.adc_min=0;
+      }
+        
       Flash_write();
     }
     if(CAL.pos_out==GPIO_PIN_RESET){

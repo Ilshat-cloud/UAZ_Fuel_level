@@ -39,9 +39,6 @@
 #define ANGLE_MIN_DEG   10.0f
 #define ANGLE_MAX_DEG   80.0f
 
-#define ADC_MIN         10U
-#define ADC_MAX         4096
-
 #define ANGLE_MIN_RAD   (ANGLE_MIN_DEG * (M_PI / 180.0f))
 #define Y_MIN           -0.9848077530f   // -cos(10 deg)
 
@@ -87,6 +84,20 @@ typedef struct
     int16_t  value_max;   // Максимум выходного значения (например, +1000)
 } AnalogSensor_t;
 
+static const uint16_t adc_table[11] =
+{
+    4096, 3718, 3340, 2962, 2584,
+    2206, 1828, 1450, 1072,  694,0
+};
+
+static const uint16_t r20_table[11] =                   //r потенциометра умноженное на 20
+{
+       0,  667, 1333, 2000, 2667,
+    3333, 4000, 4667, 5333, 6000,2000
+};
+
+
+uint16_t R_From_ADC(uint16_t adc);
 void Flash_read();
 uint32_t Flash_write();
 FLASH_EraseInitTypeDef Erase;
@@ -112,8 +123,7 @@ CAL={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
 extern IWDG_HandleTypeDef hiwdg;
 extern ADC_HandleTypeDef hadc1;
 Blynk_types current_blynk_flag=Blynk_off;
-uint16_t adc_max=ADC_MAX;
-uint16_t adc_min=ADC_MIN;
+
 AnalogSensor_t Voltage;
 AnalogSensor_t Level1_ai;
 AnalogSensor_t Level2_ai;
@@ -167,7 +177,7 @@ static inline uint32_t flash_read(uint32_t address) {
     return *(volatile uint32_t*)address;
 }
 void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
-void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, uint8_t calibration_mode, uint8_t blynk);
+
 //static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min);
 void AnalogSensor_StartCalibration(AnalogSensor_t* sensor);
 void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value);
@@ -250,8 +260,8 @@ void Start_Product_IDLE_Task(void *argument)
     osDelay(10);
     hold_cnt_prev=CAL.hold_counter;
     ADC_ProcessNewSamples();
-    AnalogSensor_Update(&Level1_ai,adc_filtered[0]);
-    AnalogSensor_Update(&Level2_ai,adc_filtered[1]);
+    AnalogSensor_Update(&Level1_ai,R_From_ADC(adc_filtered[0]));                //TODO Вот тут надо продебажить и снять кривую для АЦП
+    AnalogSensor_Update(&Level2_ai,R_From_ADC(adc_filtered[1]));
     AnalogSensor_Update(&Voltage,adc_filtered[2]);
     HAL_IWDG_Refresh(&hiwdg);
     buttin_proc_without_tim(&Warning_in,Warning_in_GPIO_Port,Warning_in_Pin);
@@ -282,13 +292,18 @@ void Start_Product_IDLE_Task(void *argument)
       }
     }else if(cal_ongoing_flag){
       cal_ongoing_flag=0;
-      level1_ai.adc_max=level1_ai.adc_max+10;
-      if(level1_ai.adc_min>10){
-        level1_ai.adc_min=level1_ai.adc_min-10;
+      Level1_ai.adc_max=Level1_ai.adc_max+10;
+      if(Level1_ai.adc_min>10){
+        Level1_ai.adc_min=Level1_ai.adc_min-10;
       }else{
-        level1_ai.adc_min=0;
+        Level1_ai.adc_min=0;
       }
-        
+      Level2_ai.adc_max=Level2_ai.adc_max+10;
+      if(Level2_ai.adc_min>10){
+        Level2_ai.adc_min=Level2_ai.adc_min-10;
+      }else{
+        Level2_ai.adc_min=0;
+      }        
       Flash_write();
     }
     if(CAL.pos_out==GPIO_PIN_RESET){
@@ -383,9 +398,9 @@ void Start_Led_task(void *argument)
     {
       int perc = Level1_ai.value;  // проценты уже есть
       ssd1306_WriteString("L1:", Font_7x10, White);
-      if (perc < 1){
+      if (perc < 0){
         ssd1306_SetCursor(21, 7);
-        ssd1306_WriteString("V+", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=7;
@@ -393,7 +408,7 @@ void Start_Led_task(void *argument)
         }
       }else if (perc > 109){
         ssd1306_SetCursor(21, 7);
-        ssd1306_WriteString("GND", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=7;
@@ -445,9 +460,9 @@ void Start_Led_task(void *argument)
     {
       int perc = Level2_ai.value;
       ssd1306_WriteString("L2:", Font_7x10, White);
-      if (perc < 1){
+      if (perc < 0){
         ssd1306_SetCursor(21, 45);
-        ssd1306_WriteString("V+", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=14;
@@ -456,7 +471,7 @@ void Start_Led_task(void *argument)
         }
       } else if (perc > 109){
         ssd1306_SetCursor(21, 45);
-        ssd1306_WriteString("GND", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=14;
@@ -675,7 +690,7 @@ void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value
 
 void AnalogSensor_StartCalibration(AnalogSensor_t* sensor)
 {
-  if(sensor->adc_min<3000){
+  if(sensor->adc_min<5000){
     sensor->adc_min+= 1000;       // максимально возможное значение для старта поиска минимума
   }
   if(sensor->adc_max>1500){
@@ -763,15 +778,15 @@ void DefaultAnalogSensors(void)
     Voltage.adc_raw   = 0;
     Voltage.value     = 0;
 
-    Level1_ai.adc_min   = 1;
-    Level1_ai.adc_max   = 4096;
+    Level1_ai.adc_min   = 20;
+    Level1_ai.adc_max   = 6000;
     Level1_ai.value_min =0;
     Level1_ai.value_max = 100;
     Level1_ai.adc_raw   = 0;
     Level1_ai.value     = 0;
 
-    Level2_ai.adc_min   = 1;
-    Level2_ai.adc_max   = 4096;
+    Level2_ai.adc_min   = 20;
+    Level2_ai.adc_max   = 6000;
     Level2_ai.value_min = 0;
     Level2_ai.value_max = 100;
     Level2_ai.adc_raw   = 0;
@@ -802,9 +817,43 @@ void ADC_ProcessNewSamples(void)
     }
 }
 
-void DisplayLevelsAndStatus(AnalogSensor_t* level1, AnalogSensor_t* level2, AnalogSensor_t* voltage, Blynk_types blynk_flag, uint8_t calibration_mode, uint8_t blynk)
-{
 
+
+uint16_t R_From_ADC(uint16_t adc)
+{
+    /* Границы */
+    if (adc >= adc_table[0])
+    {
+        return r20_table[0];
+    }
+
+    if (adc <= adc_table[10])
+    {
+        return r20_table[10];
+    }
+
+    /* Поиск сегмента */
+    for (uint8_t i = 0; i < 10; i++)
+    {
+        if ((adc <= adc_table[i]) && (adc >= adc_table[i + 1]))
+        {
+            uint16_t x0 = adc_table[i];
+            uint16_t x1 = adc_table[i + 1];
+
+            uint16_t y0 = r20_table[i];
+            uint16_t y1 = r20_table[i + 1];
+
+            /* Интерполяция:
+               y = y0 + (x0 - adc) * (y1 - y0) / (x0 - x1)
+            */
+            uint32_t num = (uint32_t)(x0 - adc) * (y1 - y0);
+            uint32_t den = (uint32_t)(x0 - x1);
+
+            return (uint16_t)(y0 + num / den);
+        }
+    }
+
+    return 0; // не должно сюда попасть
 }
 
 /* USER CODE END Application */

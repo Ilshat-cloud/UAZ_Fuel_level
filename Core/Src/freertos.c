@@ -84,16 +84,16 @@ typedef struct
     int16_t  value_max;   // Максимум выходного значения (например, +1000)
 } AnalogSensor_t;
 
-static const uint16_t adc_table[11] =
+static const uint16_t adc_table[12] =
 {
-    4096, 3718, 3340, 2962, 2584,
-    2206, 1828, 1450, 1072,  694,0
+    4096,4075, 3137, 2380, 1935, 1560,
+    1360, 1160, 1010, 855,  590,0
 };
 
-static const uint16_t r20_table[11] =                   //r потенциометра умноженное на 20
+static const uint16_t r20_table[12] =                   //r потенциометра умноженное на 20
 {
-       0,  667, 1333, 2000, 2667,
-    3333, 4000, 4667, 5333, 6000,2000
+       0,130,  600, 1240, 1820, 1600,
+    3200, 4000, 4800, 6000, 9300,10000
 };
 
 
@@ -733,7 +733,7 @@ uint32_t Flash_write(){
 
 void Flash_read(void) {
     uint32_t temp;
-
+    
     // Проверка: если первая ячейка пустая — загрузить дефолтные значения
     temp = flash_read(User_Page_Adress[0]);
     if (temp == 0xFFFFFFFF) {
@@ -827,13 +827,13 @@ uint16_t R_From_ADC(uint16_t adc)
         return r20_table[0];
     }
 
-    if (adc <= adc_table[10])
+    if (adc <= adc_table[11])
     {
-        return r20_table[10];
+        return r20_table[11];
     }
 
     /* Поиск сегмента */
-    for (uint8_t i = 0; i < 10; i++)
+    for (uint8_t i = 0; i < 11; i++)
     {
         if ((adc <= adc_table[i]) && (adc >= adc_table[i + 1]))
         {

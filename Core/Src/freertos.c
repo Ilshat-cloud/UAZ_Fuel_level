@@ -36,6 +36,7 @@
 #define M_PI 	3.1415926535f
 #endif
 
+#define PRECENT
 #define ANGLE_MIN_DEG   10.0f
 #define ANGLE_MAX_DEG   80.0f
 
@@ -412,15 +413,7 @@ void Start_Led_task(void *argument)
     {
       int perc = Level1_ai.value;  // проценты уже есть
       ssd1306_WriteString("L1:", Font_7x10, White);
-      if (perc < 0){
-        ssd1306_SetCursor(21, 7);
-        ssd1306_WriteString("err", Font_11x18, White);
-        if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY-=7;
-          DrawBitmap_32(buffer,White);
-        }
-      }else if (perc > 109){
+      if ((perc < 0)||(perc > (Level1_ai.value_max+5))){
         ssd1306_SetCursor(21, 7);
         ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
@@ -436,11 +429,19 @@ void Start_Led_task(void *argument)
           if(reverse_in_sequence==2){
             ssd1306_WriteString(numbuf, Font_16x26, Black);
             SSD1306.CurrentY+=4;
+#ifdef PRECENT
             ssd1306_WriteString("%", Font_11x18, Black);
+#else
+            ssd1306_WriteString("L", Font_11x18, Black);
+#endif
           }else{
             ssd1306_WriteString(numbuf, Font_16x26, White);
             SSD1306.CurrentY+=4;
-            ssd1306_WriteString("%", Font_11x18, White);
+#ifdef PRECENT
+            ssd1306_WriteString("%", Font_11x18, Black);
+#else
+            ssd1306_WriteString("L", Font_11x18, Black);
+#endif
           }
         }else{
           ssd1306_WriteString(numbuf, Font_16x26, Black);
@@ -474,37 +475,34 @@ void Start_Led_task(void *argument)
     {
       int perc = Level2_ai.value;
       ssd1306_WriteString("L2:", Font_7x10, White);
-      if (perc < 0){
+      if ((perc < 0)||(perc > (Level2_ai.value_max+5))){
         ssd1306_SetCursor(21, 45);
         ssd1306_WriteString("err", Font_11x18, White);
         if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=14;
           DrawBitmap_32(buffer,White);
-          
-        }
-      } else if (perc > 109){
-        ssd1306_SetCursor(21, 45);
-        ssd1306_WriteString("err", Font_11x18, White);
-        if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY-=14;
-          DrawBitmap_32(buffer,White);
-          
         }
       } else {
-        char numbuf[5];
         ssd1306_SetCursor(21, 37);
         sprintf(numbuf, "%d", perc);
         if((Fuel_level2_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==3)){
           if(reverse_in_sequence==3){
             ssd1306_WriteString(numbuf, Font_16x26, Black);
             SSD1306.CurrentY+=4;
+#ifdef PRECENT
             ssd1306_WriteString("%", Font_11x18, Black);
+#else
+            ssd1306_WriteString("L", Font_11x18, Black);
+#endif
           }else{
             ssd1306_WriteString(numbuf, Font_16x26, White);
             SSD1306.CurrentY+=4;
-            ssd1306_WriteString("%", Font_11x18, White);
+#ifdef PRECENT
+            ssd1306_WriteString("%", Font_11x18, Black);
+#else
+            ssd1306_WriteString("L", Font_11x18, Black);
+#endif
           }
         }else{
           ssd1306_WriteString(numbuf, Font_16x26, Black);

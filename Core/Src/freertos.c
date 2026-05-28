@@ -360,37 +360,24 @@ void Start_Led_task(void *argument)
   /* USER CODE BEGIN Start_Led_task */
   uint8_t buffer[240];
   char numbuf[10];
+    // Координаты для анимации startScreen
+  const uint8_t anim_coords[4][2] = {{0, 32}, {32, 16}, {64, 32}, {96, 16}};
   //----------Horse---------------
-
   
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
   uint16_t id=(uint16_t)HAL_GetUIDw0();
   // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
-  ssd1306_SetCursor(0,0);
-  sprintf(numbuf, "%d", id);
-  ssd1306_WriteString(numbuf, Font_7x10, White);
-  ssd1306_SetCursor(0,32); 
-  startScreen();
-  ssd1306_Fill(Black);
-  ssd1306_SetCursor(0,0);
-  sprintf(numbuf, "%d", id);
-  ssd1306_WriteString(numbuf, Font_7x10, White);
-  ssd1306_SetCursor(32,16); 
-  startScreen();
-  ssd1306_Fill(Black);
-  ssd1306_SetCursor(0,0);
-  sprintf(numbuf, "%d", id);
-  ssd1306_WriteString(numbuf, Font_7x10, White);
-  ssd1306_SetCursor(64,32); 
-  startScreen();
-  ssd1306_Fill(Black);
-  ssd1306_SetCursor(0,0);
-  sprintf(numbuf, "%d", id);
-  ssd1306_WriteString(numbuf, Font_7x10, White);
-  ssd1306_SetCursor(96,16); 
-  startScreen();
+  snprintf(numbuf, 5, "%d", id);
+  
+  for (int i = 0; i < 4; i++) {
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString(numbuf, Font_7x10, White);
+    ssd1306_SetCursor(anim_coords[i][0], anim_coords[i][1]); 
+    startScreen();
+  }
   ssd1306_Fill(Black);
   //------------------------------------
   /* Infinite loop */
@@ -594,46 +581,29 @@ void StartBlynkTask(void *argument)
   for(;;)
   {
     osDelay(500); 
-    switch (current_blynk_flag){
-    case Blynk_off:
-      blynk_output=0;
-      HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_RESET);
-      break;
-    case Blynk_left:
-      if(blynk_output){
-        blynk_output=0;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_RESET);
-      }else{
-        blynk_output=1;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_SET);
+    blynk_output = !blynk_output;
+    GPIO_PinState left_pin  = GPIO_PIN_RESET;
+    GPIO_PinState right_pin = GPIO_PIN_RESET;
+    if (blynk_output) 
+    {
+      switch (current_blynk_flag)
+      {
+      case Blynk_left:
+        left_pin = GPIO_PIN_SET;
+        break;
+      case Blynk_right:
+        right_pin = GPIO_PIN_SET;
+        break;
+      case Blynk_warning:
+        left_pin  = GPIO_PIN_SET;
+        right_pin = GPIO_PIN_SET;
+        break;
+      default:
+        break;
       }
-      break;
-    case Blynk_right:
-      if(blynk_output){
-        blynk_output=0;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_RESET);
-      }else{
-        blynk_output=1;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_SET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_RESET);
-      }
-      break;
-    case Blynk_warning:
-      if(blynk_output){
-        blynk_output=0;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_RESET);
-      }else{
-        blynk_output=1;
-        HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port,Right_out_gpio_Pin,GPIO_PIN_SET);
-        HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port,Left_out_GPIO_Pin,GPIO_PIN_SET);
-      }
-      break;
     }
+    HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, left_pin);
+    HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port, Right_out_gpio_Pin, right_pin);
   }
   /* USER CODE END StartBlynkTask */
 }

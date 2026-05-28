@@ -358,22 +358,36 @@ void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
   uint8_t buffer[240];
+  char numbuf[10];
   //----------Horse---------------
 
   
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
-
+  uint16_t id=(uint16_t)HAL_GetUIDw0();
   // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
+  ssd1306_SetCursor(0,0);
+  sprintf(numbuf, "%d", id);
+  ssd1306_WriteString(numbuf, Font_7x10, White);
+  ssd1306_SetCursor(0,32); 
   startScreen();
   ssd1306_Fill(Black);
+  ssd1306_SetCursor(0,0);
+  sprintf(numbuf, "%d", id);
+  ssd1306_WriteString(numbuf, Font_7x10, White);
   ssd1306_SetCursor(32,16); 
   startScreen();
   ssd1306_Fill(Black);
+  ssd1306_SetCursor(0,0);
+  sprintf(numbuf, "%d", id);
+  ssd1306_WriteString(numbuf, Font_7x10, White);
   ssd1306_SetCursor(64,32); 
   startScreen();
   ssd1306_Fill(Black);
+  ssd1306_SetCursor(0,0);
+  sprintf(numbuf, "%d", id);
+  ssd1306_WriteString(numbuf, Font_7x10, White);
   ssd1306_SetCursor(96,16); 
   startScreen();
   ssd1306_Fill(Black);
@@ -416,7 +430,7 @@ void Start_Led_task(void *argument)
         }
       }else{
         ssd1306_SetCursor(21, 0);
-        char numbuf[5];
+
         sprintf(numbuf, "%d", perc);
         if((Fuel_level1_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==2)){
           if(reverse_in_sequence==2){

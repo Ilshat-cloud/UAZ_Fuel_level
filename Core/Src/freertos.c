@@ -284,8 +284,8 @@ void Start_Product_IDLE_Task(void *argument)
     
     if(CAL.hold_counter>1000){
       if(cal_ongoing_flag){
-        AnalogSensor_CalibrateMinMax(&Level1_ai,adc_filtered[0]);
-        AnalogSensor_CalibrateMinMax(&Level2_ai,adc_filtered[1]);
+        AnalogSensor_CalibrateMinMax(&Level1_ai,R_From_ADC(adc_filtered[0]));
+        AnalogSensor_CalibrateMinMax(&Level2_ai,R_From_ADC(adc_filtered[1]));
       }else{
         cal_ongoing_flag=1;
         AnalogSensor_StartCalibration(&Level1_ai);
@@ -293,15 +293,15 @@ void Start_Product_IDLE_Task(void *argument)
       }
     }else if(cal_ongoing_flag){
       cal_ongoing_flag=0;
-      Level1_ai.adc_max=Level1_ai.adc_max+10;
-      if(Level1_ai.adc_min>10){
-        Level1_ai.adc_min=Level1_ai.adc_min-10;
+      Level1_ai.adc_max=Level1_ai.adc_max+5;
+      if(Level1_ai.adc_min>5){
+        Level1_ai.adc_min=Level1_ai.adc_min-5;
       }else{
         Level1_ai.adc_min=0;
       }
-      Level2_ai.adc_max=Level2_ai.adc_max+10;
-      if(Level2_ai.adc_min>10){
-        Level2_ai.adc_min=Level2_ai.adc_min-10;
+      Level2_ai.adc_max=Level2_ai.adc_max+5;
+      if(Level2_ai.adc_min>5){
+        Level2_ai.adc_min=Level2_ai.adc_min-5;
       }else{
         Level2_ai.adc_min=0;
       }        
@@ -359,7 +359,7 @@ void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
   uint8_t buffer[240];
-  char numbuf[10];
+  char numbuf[11];
     // Координаты для анимации startScreen
   const uint8_t anim_coords[4][2] = {{0, 32}, {32, 16}, {64, 32}, {96, 16}};
   //----------Horse---------------
@@ -367,9 +367,9 @@ void Start_Led_task(void *argument)
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
-  uint16_t id=(uint16_t)HAL_GetUIDw0();
+  uint32_t id=HAL_GetUIDw0();
   // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
-  snprintf(numbuf, 5, "%d", id);
+  snprintf(numbuf, 10, "%d", id);
   
   for (int i = 0; i < 4; i++) {
     ssd1306_Fill(Black);
@@ -402,7 +402,7 @@ void Start_Led_task(void *argument)
       ssd1306_WriteString("L1:", Font_7x10, White);
       if ((perc < 0)||(perc > (Level1_ai.value_max+5))){
         ssd1306_SetCursor(21, 7);
-        ssd1306_WriteString("err", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, reverse_in_sequence!=2);
         if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=7;
@@ -425,9 +425,9 @@ void Start_Led_task(void *argument)
             ssd1306_WriteString(numbuf, Font_16x26, White);
             SSD1306.CurrentY+=4;
 #ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
+            ssd1306_WriteString("%", Font_11x18, White);
 #else
-            ssd1306_WriteString("L", Font_11x18, Black);
+            ssd1306_WriteString("L", Font_11x18, White);
 #endif
           }
         }else{
@@ -464,7 +464,7 @@ void Start_Led_task(void *argument)
       ssd1306_WriteString("L2:", Font_7x10, White);
       if ((perc < 0)||(perc > (Level2_ai.value_max+5))){
         ssd1306_SetCursor(21, 45);
-        ssd1306_WriteString("err", Font_11x18, White);
+        ssd1306_WriteString("err", Font_11x18, reverse_in_sequence!=3);
         if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
           memcpy(buffer,gas,128);
           SSD1306.CurrentY-=14;
@@ -486,9 +486,9 @@ void Start_Led_task(void *argument)
             ssd1306_WriteString(numbuf, Font_16x26, White);
             SSD1306.CurrentY+=4;
 #ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
+            ssd1306_WriteString("%", Font_11x18, White);
 #else
-            ssd1306_WriteString("L", Font_11x18, Black);
+            ssd1306_WriteString("L", Font_11x18, White);
 #endif
           }
         }else{

@@ -120,9 +120,7 @@ static struct button_without_fix
 Fuel_level1_low={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Fuel_level2_low={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Left_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
-Right_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
-Warning_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
-CAL={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
+Right_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
 
 Blynk_types current_blynk_flag=Blynk_off;
 volatile Level_t current_ctrl = LEVEL_AUTO;
@@ -275,11 +273,12 @@ void Start_Product_IDLE_Task(void *argument)
                 auto_state = AUTO_STATE_LL_TRIGGERED;   
             } else {
                 auto_state = AUTO_STATE_WAITING;
-                HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_RESET);
+                
             }
 
             switch (auto_state) {
                 case AUTO_STATE_WAITING:
+                  HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_RESET);
                 case AUTO_STATE_LL_TRIGGERED:
                     // В этих состояниях в режиме AUTO насос/реле молчит или ждет
                     break;
@@ -311,11 +310,31 @@ void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
   char buf[32];
+  uint8_t buffer[240];
+  char numbuf[10];
+  ssd1306_HardResetAndReinit();
+  ssd1306_Fill(Black);
+  ssd1306_UpdateScreen();
+    // Координаты для анимации startScreen
+  const uint8_t anim_coords[4][2] = {{0, 32}, {32, 16}, {64, 32}, {96, 16}};
+  //----------Horse---------------
   
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
+  uint16_t id=(uint16_t)HAL_GetUIDw0();
+  // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
+  snprintf(numbuf, 5, "%d", id);
   
+  for (int i = 0; i < 4; i++) {
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString(numbuf, Font_7x10, White);
+    ssd1306_SetCursor(anim_coords[i][0], anim_coords[i][1]); 
+    startScreen();
+  }
+  ssd1306_Fill(Black);
+  //------------------------------------
   for(;;)
   {
     osDelay(100);
@@ -403,7 +422,7 @@ void StartBlynkTask(void *argument)
     blynk_output = !blynk_output;
     
     // Дублируем блинк на физический диод платы PC13, если требуется
-    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+    //HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
   }
   /* USER CODE END StartBlynkTask */
 }

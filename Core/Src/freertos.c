@@ -22,11 +22,9 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
-#include "stm32f1xx_hal_flash.h" // Add this include for FLASH_EraseInitTypeDef
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <math.h>
 #include "sh1106.h"
 #include "stdio.h"
 #include "string.h"
@@ -50,6 +48,11 @@
 #define ADC_CHANNEL_COUNT 3
 #define ADC_AVG_DEPTH     10
 
+#define btn_ll Fuel_level1_low
+#define btn_hh Fuel_level2_low
+#define btn_auto Left_in
+#define btn_on Right_in
+#define RELAY_OUTPUT_PIN Left_out_GPIO_Pin
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,6 +77,18 @@ typedef enum {
     Blynk_warning,
 } Blynk_types;
 
+typedef enum {
+    LEVEL_OFF = 0,
+    LEVEL_AUTO,
+    LEVEL_ON
+} Level_t;
+
+typedef enum {
+    AUTO_STATE_WAITING = 0,
+    AUTO_STATE_LL_TRIGGERED,
+    AUTO_STATE_HH_TRIGGERED,
+    AUTO_STATE_ERROR
+} Auto_state_t;
 
 typedef struct
 {
@@ -85,22 +100,6 @@ typedef struct
     int16_t  value_max;   // Максимум выходного значения (например, +1000)
 } AnalogSensor_t;
 
-static const uint16_t adc_table[12] =
-{
-    4096,4075, 3137, 2380, 1935, 1560,
-    1360, 1160, 1010, 855,  590,0
-};
-
-static const uint16_t r20_table[12] =                   //r потенциометра умноженное на 20
-{
-       0,130,  600, 1240, 1820, 2600,
-    3200, 4000, 4800, 6000, 9300,20000
-};
-
-
-uint16_t R_From_ADC(uint16_t adc);
-void Flash_read();
-uint32_t Flash_write();
 FLASH_EraseInitTypeDef Erase;
 void DefaultAnalogSensors(void);
 /* USER CODE END PD */
@@ -114,6 +113,9 @@ void DefaultAnalogSensors(void);
 /* USER CODE BEGIN Variables */
 extern SSD1306_t SSD1306;
 extern I2C_HandleTypeDef hi2c1;
+extern IWDG_HandleTypeDef hiwdg;
+extern ADC_HandleTypeDef hadc1;
+
 static struct button_without_fix 
 Fuel_level1_low={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Fuel_level2_low={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
@@ -121,33 +123,17 @@ Left_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Right_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 Warning_in={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0},
 CAL={GPIO_PIN_SET,GPIO_PIN_SET,GPIO_PIN_RESET,GPIO_PIN_SET,0};
-extern IWDG_HandleTypeDef hiwdg;
-extern ADC_HandleTypeDef hadc1;
+
 Blynk_types current_blynk_flag=Blynk_off;
-
+volatile Level_t current_ctrl = LEVEL_AUTO;
+volatile Auto_state_t auto_state = AUTO_STATE_WAITING;
 AnalogSensor_t Voltage;
-AnalogSensor_t Level1_ai;
-AnalogSensor_t Level2_ai;
-static uint16_t ADC_dma[ADC_CHANNEL_COUNT];                     // Данные от DMA
-static uint16_t adc_history[ADC_CHANNEL_COUNT][ADC_AVG_DEPTH]; // История выборок
-static uint8_t  adc_index = 0;                                  // Индекс текущей выборки
-static uint16_t adc_filtered[ADC_CHANNEL_COUNT];               // Усреднённые значения
+static uint16_t ADC_dma[ADC_CHANNEL_COUNT];
+static uint16_t adc_history[ADC_CHANNEL_COUNT][ADC_AVG_DEPTH];
+static uint8_t  adc_index = 0;
+static uint16_t adc_filtered[ADC_CHANNEL_COUNT];
+
 uint8_t blynk_output=0;
-static uint8_t cal_ongoing_flag=0;
-uint8_t reverse_in_sequence=0, analog_reverse=0;
-#pragma location = ".rodata"
-__root static const uint8_t warning_triangle[240] =  { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x60, 0x0, 0x0, 0x0, 0x0, 0x6, 0x30, 0x0, 0x0, 0x0, 0x0, 0x4, 0x10, 0x0, 0x0, 0x0, 0x0, 0xc, 0x18, 0x0, 0x0, 0x0, 0x0, 0x18, 0x8c, 0x0, 0x0, 0x0, 0x0, 0x11, 0xc4, 0x0, 0x0, 0x0, 0x0, 0x31, 0xc6, 0x0, 0x0, 0x0, 0x0, 0x63, 0x63, 0x0, 0x0, 0x0, 0x0, 0x46, 0x31, 0x0, 0x0, 0x0, 0x0, 0xc4, 0x11, 0x80, 0x0, 0x0, 0x1, 0x8c, 0x18, 0xc0, 0x0, 0x0, 0x1, 0x18, 0xc, 0x40, 0x0, 0x0, 0x3, 0x10, 0x4, 0x60, 0x0, 0x0, 0x6, 0x30, 0x6, 0x30, 0x0, 0x0, 0x4, 0x60, 0x3, 0x10, 0x0, 0x0, 0xc, 0x40, 0x1, 0x18, 0x0, 0x0, 0x18, 0xc0, 0x1, 0x8c, 0x0, 0x0, 0x11, 0x80, 0x0, 0xc4, 0x0, 0x0, 0x31, 0x0, 0x0, 0x46, 0x0, 0x0, 0x63, 0x0, 0x0, 0x63, 0x0, 0x0, 0x46, 0x0, 0x0, 0x31, 0x0, 0x0, 0xc4, 0x0, 0x0, 0x11, 0x80, 0x1, 0x8c, 0x0, 0x0, 0x18, 0xc0, 0x1, 0x18, 0x0, 0x0, 0xc, 0x40, 0x3, 0x10, 0x0, 0x0, 0x4, 0x60, 0x6, 0x30, 0x0, 0x0, 0x6, 0x30, 0x4, 0x60, 0x0, 0x0, 0x3, 0x10, 0xc, 0x40, 0x0, 0x0, 0x1, 0x18, 0x18, 0xc0, 0x0, 0x0, 0x1, 0x8c, 0x11, 0xff, 0xff, 0xff, 0xff, 0xc4, 0x30, 0x0, 0x0, 0x0, 0x0, 0x6, 0x60, 0x0, 0x0, 0x0, 0x0, 0x3, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-#pragma location = ".rodata"
-__root static const uint8_t warning_triangle_fill[240] =  { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x7, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x7, 0xf0, 0x0, 0x0, 0x0, 0x0, 0xf, 0xf8, 0x0, 0x0, 0x0, 0x0, 0x1f, 0xfc, 0x0, 0x0, 0x0, 0x0, 0x1f, 0xfc, 0x0, 0x0, 0x0, 0x0, 0x3f, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x7f, 0x7f, 0x0, 0x0, 0x0, 0x0, 0x7e, 0x3f, 0x0, 0x0, 0x0, 0x0, 0xfc, 0x1f, 0x80, 0x0, 0x0, 0x1, 0xfc, 0x1f, 0xc0, 0x0, 0x0, 0x1, 0xf8, 0xf, 0xc0, 0x0, 0x0, 0x3, 0xf0, 0x7, 0xe0, 0x0, 0x0, 0x7, 0xf0, 0x7, 0xf0, 0x0, 0x0, 0x7, 0xe0, 0x3, 0xf0, 0x0, 0x0, 0xf, 0xc0, 0x1, 0xf8, 0x0, 0x0, 0x1f, 0xc0, 0x1, 0xfc, 0x0, 0x0, 0x1f, 0x80, 0x0, 0xfc, 0x0, 0x0, 0x3f, 0x0, 0x0, 0x7e, 0x0, 0x0, 0x7f, 0x0, 0x0, 0x7f, 0x0, 0x0, 0x7e, 0x0, 0x0, 0x3f, 0x0, 0x0, 0xfc, 0x0, 0x0, 0x1f, 0x80, 0x1, 0xfc, 0x0, 0x0, 0x1f, 0xc0, 0x1, 0xf8, 0x0, 0x0, 0xf, 0xc0, 0x3, 0xf0, 0x0, 0x0, 0x7, 0xe0, 0x7, 0xf0, 0x0, 0x0, 0x7, 0xf0, 0x7, 0xe0, 0x0, 0x0, 0x3, 0xf0, 0xf, 0xc0, 0x0, 0x0, 0x1, 0xf8, 0x1f, 0xc0, 0x0, 0x0, 0x1, 0xfc, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x3f, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-
-#pragma location = ".rodata"
-__root static const uint8_t arrow_right[240] =  { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xb0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x98, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x83, 0x0, 0x0, 0x0, 0x0, 0x0, 0x81, 0x80, 0x0, 0x0, 0x0, 0x0, 0x80, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x30, 0x0, 0x0, 0x0, 0x0, 0x80, 0x18, 0x0, 0xff, 0xff, 0xff, 0x80, 0xe, 0x0, 0xff, 0xff, 0xff, 0x80, 0x3, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x1, 0x80, 0xc0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x30, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x1c, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x6, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x6, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x1c, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x30, 0xc0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0xff, 0xff, 0xff, 0x80, 0x1, 0x80, 0xff, 0xff, 0xff, 0x80, 0x3, 0x0, 0x0, 0x0, 0x0, 0x80, 0xe, 0x0, 0x0, 0x0, 0x0, 0x80, 0x18, 0x0, 0x0, 0x0, 0x0, 0x80, 0x30, 0x0, 0x0, 0x0, 0x0, 0x80, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x81, 0x80, 0x0, 0x0, 0x0, 0x0, 0x83, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x98, 0x0, 0x0, 0x0, 0x0, 0x0, 0xb0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-#pragma location = ".rodata"
-__root static const uint8_t arrow_right_fill[240] = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf8, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0x80, 0x0, 0x0, 0x0, 0x0, 0xff, 0xe0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xf0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xf8, 0x0, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe0, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0xff, 0xfe, 0x0, 0x0, 0x0, 0x0, 0xff, 0xf8, 0x0, 0x0, 0x0, 0x0, 0xff, 0xf0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xe0, 0x0, 0x0, 0x0, 0x0, 0xff, 0x80, 0x0, 0x0, 0x0, 0x0, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf8, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-
-static const uint8_t arrow_left[240] @ ".rodata"=   { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1a, 0x0, 0x0, 0x0, 0x0, 0x0, 0x32, 0x0, 0x0, 0x0, 0x0, 0x0, 0x62, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc2, 0x0, 0x0, 0x0, 0x0, 0x3, 0x2, 0x0, 0x0, 0x0, 0x0, 0xe, 0x2, 0x0, 0x0, 0x0, 0x0, 0x18, 0x2, 0x0, 0x0, 0x0, 0x0, 0x30, 0x2, 0x0, 0x0, 0x0, 0x0, 0xe0, 0x3, 0xff, 0xff, 0xff, 0x1, 0x80, 0x3, 0xff, 0xff, 0xff, 0x3, 0x0, 0x0, 0x0, 0x0, 0x3, 0xe, 0x0, 0x0, 0x0, 0x0, 0x3, 0x18, 0x0, 0x0, 0x0, 0x0, 0x3, 0x70, 0x0, 0x0, 0x0, 0x0, 0x3, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x70, 0x0, 0x0, 0x0, 0x0, 0x3, 0x18, 0x0, 0x0, 0x0, 0x0, 0x3, 0xe, 0x0, 0x0, 0x0, 0x0, 0x3, 0x3, 0x0, 0x0, 0x0, 0x0, 0x3, 0x1, 0x80, 0x3, 0xff, 0xff, 0xff, 0x0, 0xe0, 0x3, 0xff, 0xff, 0xff, 0x0, 0x30, 0x2, 0x0, 0x0, 0x0, 0x0, 0x18, 0x2, 0x0, 0x0, 0x0, 0x0, 0xe, 0x2, 0x0, 0x0, 0x0, 0x0, 0x3, 0x2, 0x0, 0x0, 0x0, 0x0, 0x1, 0xc2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x62, 0x0, 0x0, 0x0, 0x0, 0x0, 0x32, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1a, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-static const uint8_t arrow_left_fill[240] @ ".rodata" = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x7e, 0x0, 0x0, 0x0, 0x0, 0x1, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x3, 0xfe, 0x0, 0x0, 0x0, 0x0, 0xf, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x1f, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x3f, 0xfe, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0, 0x3f, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x1f, 0xfe, 0x0, 0x0, 0x0, 0x0, 0xf, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x3, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x1, 0xfe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x7e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3e, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1e, 0x0, 0x0, 0x0, 0x0, 0x0, 0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-static const uint8_t gas[]@ ".rodata" = { 0x1f, 0xff, 0xf8, 0x0, 0x3f, 0xff, 0xfc, 0x0, 0x60, 0x0, 0x6, 0x0, 0xcf, 0xff, 0xf3, 0x0, 0xd3, 0x18, 0xcb, 0x0, 0xd4, 0xa5, 0x2b, 0x80, 0xd4, 0xa5, 0x2b, 0xc6, 0xd4, 0xa5, 0x2b, 0x6f, 0xd3, 0x18, 0xcb, 0x3d, 0xcf, 0xff, 0xf3, 0x19, 0xc0, 0x0, 0x3, 0xd, 0xc0, 0x0, 0x3, 0xf, 0xc3, 0xff, 0xc3, 0x87, 0xc7, 0xff, 0xe3, 0x41, 0xcf, 0x0, 0xf3, 0x21, 0xce, 0x0, 0x73, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xcc, 0x0, 0x33, 0x11, 0xce, 0x0, 0x73, 0x21, 0xcf, 0x0, 0xf3, 0x61, 0xc7, 0xff, 0xe3, 0x41, 0x63, 0xff, 0xc6, 0x41, 0x30, 0x0, 0xc, 0x41, 0x1f, 0xff, 0xf8, 0x72, 0xf, 0xff, 0xf0, 0x1c };
 
 /* USER CODE END Variables */
 /* Definitions for Product_IDLE */
@@ -174,16 +160,10 @@ const osThreadAttr_t Blynk_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-static inline uint32_t flash_read(uint32_t address) {
-    return *(volatile uint32_t*)address;
-}
-void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
 
-//static uint8_t get_vertical_percent(uint16_t adc_value,uint16_t adc_max,uint16_t adc_min);
-void AnalogSensor_StartCalibration(AnalogSensor_t* sensor);
-void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value);
-void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value);
+void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
 void ADC_ProcessNewSamples(void);
+void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -250,100 +230,72 @@ void Start_Product_IDLE_Task(void *argument)
 {
   /* USER CODE BEGIN Start_Product_IDLE_Task */
   HAL_ADCEx_Calibration_Start(&hadc1);
-  Flash_read();
-  uint8_t sequence_trig=0;
-  uint16_t hold_cnt_prev;
-  /* Infinite loop */
+  
   for(;;)
   {
+    // Запуск АЦП для замера напряжения платы
     HAL_ADC_Stop_DMA(&hadc1);
-    HAL_ADC_Start_DMA(&hadc1,(uint32_t*)&ADC_dma,3);
-    osDelay(10);
-    hold_cnt_prev=CAL.hold_counter;
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&ADC_dma, 3);
+    osDelay(10); // Период опроса 10мс идеально подходит для buttin_proc
+    
     ADC_ProcessNewSamples();
-    AnalogSensor_Update(&Level1_ai,R_From_ADC(adc_filtered[0]));                //TODO Вот тут надо продебажить и снять кривую для АЦП
-    AnalogSensor_Update(&Level2_ai,R_From_ADC(adc_filtered[1]));
-    AnalogSensor_Update(&Voltage,adc_filtered[2]);
+    AnalogSensor_Update(&Voltage, adc_filtered[2]);
     HAL_IWDG_Refresh(&hiwdg);
-    buttin_proc_without_tim(&Warning_in,Warning_in_GPIO_Port,Warning_in_Pin);
-    buttin_proc_without_tim(&Right_in,Right_in_GPIO_Port,Right_in_Pin);
-    buttin_proc_without_tim(&Left_in,Left_in_GPIO_Port,Left_in_Pin);
-    buttin_proc_without_tim(&Fuel_level1_low,Fuel_level1_low_GPIO_Port,Fuel_level1_low_Pin);
-    buttin_proc_without_tim(&Fuel_level2_low,Fuel_level2_low_GPIO_Port,Fuel_level2_low_Pin);
-    buttin_proc_without_tim(&CAL,CAL_GPIO_Port,CAL_Pin);
-    current_blynk_flag=Blynk_off; // Сброс флага Blynk
-    if(Right_in.pos_out){
-      current_blynk_flag=Blynk_right;
-    }
-    if(Left_in.pos_out){
-      current_blynk_flag=Blynk_left;
-    }
-    if(Warning_in.pos_out){
-      current_blynk_flag=Blynk_warning;
-    }
     
-    if(CAL.hold_counter>1000){
-      if(cal_ongoing_flag){
-        AnalogSensor_CalibrateMinMax(&Level1_ai,adc_filtered[0]);
-        AnalogSensor_CalibrateMinMax(&Level2_ai,adc_filtered[1]);
-      }else{
-        cal_ongoing_flag=1;
-        AnalogSensor_StartCalibration(&Level1_ai);
-        AnalogSensor_StartCalibration(&Level2_ai);
-      }
-    }else if(cal_ongoing_flag){
-      cal_ongoing_flag=0;
-      Level1_ai.adc_max=Level1_ai.adc_max+10;
-      if(Level1_ai.adc_min>10){
-        Level1_ai.adc_min=Level1_ai.adc_min-10;
-      }else{
-        Level1_ai.adc_min=0;
-      }
-      Level2_ai.adc_max=Level2_ai.adc_max+10;
-      if(Level2_ai.adc_min>10){
-        Level2_ai.adc_min=Level2_ai.adc_min-10;
-      }else{
-        Level2_ai.adc_min=0;
-      }        
-      Flash_write();
+    // Опрашиваем физические пины старой платы с родной логикой антидребезга
+    buttin_proc_without_tim(&btn_ll, Fuel_level1_low_GPIO_Port, Fuel_level1_low_Pin);
+    buttin_proc_without_tim(&btn_hh, Fuel_level2_low_GPIO_Port, Fuel_level2_low_Pin);
+    buttin_proc_without_tim(&btn_auto, Left_in_GPIO_Port, Left_in_Pin);
+    buttin_proc_without_tim(&btn_on, Right_in_GPIO_Port, Right_in_Pin);
+
+    // Логика выбора режима (активное состояние кнопок перенесено на pos_out)
+    // В исходном коде pos_out взводится в SET, когда состояние отлично от pos_normal (нажато)
+    if (btn_on.pos_out == GPIO_PIN_SET) {
+        current_ctrl = LEVEL_ON;
+    } else if (btn_auto.pos_out == GPIO_PIN_SET) {
+        current_ctrl = LEVEL_AUTO;
+    } else {
+        current_ctrl = LEVEL_OFF;
     }
-    if(CAL.pos_out==GPIO_PIN_RESET){
-      sequence_trig=1;
-    }   
-    
-    if((CAL.hold_counter>200)&&(sequence_trig)){
-      sequence_trig=0;
-      reverse_in_sequence++;
+
+    // Конечный автомат логики реле и ошибок
+    switch (current_ctrl) {
+        case LEVEL_OFF:
+            HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_RESET); // Выключить Реле
+            auto_state = AUTO_STATE_WAITING;
+            break;
+            
+        case LEVEL_AUTO:
+            // Внимание: проверка аномалии уровней. Нажатие кнопок определяется через GPIO_PIN_SET на выходе pos_out
+            if ((btn_ll.pos_out != GPIO_PIN_SET) && (btn_hh.pos_out == GPIO_PIN_SET)) {
+                auto_state = AUTO_STATE_ERROR; // Ошибка: верхний датчик сработал, а нижний нет
+            } else if (btn_hh.pos_out == GPIO_PIN_SET) { 
+                auto_state = AUTO_STATE_HH_TRIGGERED;
+            } else if (btn_ll.pos_out == GPIO_PIN_SET) {
+                auto_state = AUTO_STATE_LL_TRIGGERED;   
+            } else {
+                auto_state = AUTO_STATE_WAITING;
+                HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_RESET);
+            }
+
+            switch (auto_state) {
+                case AUTO_STATE_WAITING:
+                case AUTO_STATE_LL_TRIGGERED:
+                    // В этих состояниях в режиме AUTO насос/реле молчит или ждет
+                    break;
+                case AUTO_STATE_HH_TRIGGERED:
+                    HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_SET); // Включаем реле
+                    break;
+                case AUTO_STATE_ERROR:
+                    HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_RESET); // Выключаем при ошибке
+                    break;
+            }
+            break;
+            
+        case LEVEL_ON:
+            HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, GPIO_PIN_SET); // Принудительно включаем реле
+            break;
     }
-       
-    if(CAL.hold_counter>400){
-      reverse_in_sequence=0;
-      sequence_trig=0;
-      analog_reverse=0;
-    }
-    if((reverse_in_sequence==2)&&(CAL.pos_out==GPIO_PIN_RESET)&&(hold_cnt_prev>10)&&(hold_cnt_prev<100)){
-      analog_reverse^=0x01;
-    }
-    if((reverse_in_sequence==3)&&(CAL.pos_out==GPIO_PIN_RESET)&&(hold_cnt_prev>10)&&(hold_cnt_prev<100)){
-      analog_reverse^=0x02;
-    }
-    if((reverse_in_sequence==4)&&(CAL.pos_out==GPIO_PIN_RESET)){
-      int16_t temp;
-      if(analog_reverse&0x01){
-        temp=Level1_ai.value_min;
-        Level1_ai.value_min=Level1_ai.value_max;
-        Level1_ai.value_max=temp;
-      }
-      if(analog_reverse&0x02){
-        temp=Level2_ai.value_min;
-        Level2_ai.value_min=Level2_ai.value_max;
-        Level2_ai.value_max=temp;
-      }
-      reverse_in_sequence=0;
-      analog_reverse=0;
-      Flash_write();
-    }
-    
   }
   /* USER CODE END Start_Product_IDLE_Task */
 }
@@ -358,206 +310,75 @@ void Start_Product_IDLE_Task(void *argument)
 void Start_Led_task(void *argument)
 {
   /* USER CODE BEGIN Start_Led_task */
-  uint8_t buffer[240];
-  char numbuf[10];
-    // Координаты для анимации startScreen
-  const uint8_t anim_coords[4][2] = {{0, 32}, {32, 16}, {64, 32}, {96, 16}};
-  //----------Horse---------------
+  char buf[32];
   
   ssd1306_HardResetAndReinit();
   ssd1306_Fill(Black);
   ssd1306_UpdateScreen();
-  uint16_t id=(uint16_t)HAL_GetUIDw0();
-  // Display the start screen at multiple cursor positions for visual effect or initialization sequence.
-  snprintf(numbuf, 5, "%d", id);
   
-  for (int i = 0; i < 4; i++) {
-    ssd1306_Fill(Black);
-    ssd1306_SetCursor(0, 0);
-    ssd1306_WriteString(numbuf, Font_7x10, White);
-    ssd1306_SetCursor(anim_coords[i][0], anim_coords[i][1]); 
-    startScreen();
-  }
-  ssd1306_Fill(Black);
-  //------------------------------------
-  /* Infinite loop */
   for(;;)
   {
-
     osDelay(100);
-    char buf[20];
     ssd1306_Fill(Black);
 
-    // Линия 1
-    ssd1306_SetCursor(0, 9);
-    if (cal_ongoing_flag)
-    {
-      ssd1306_WriteString("L1:", Font_7x10, White);
-      ssd1306_SetCursor(21, 7);
-      ssd1306_WriteString("CAL", Font_11x18, White);
-    }
-    else
-    {
-      int perc = Level1_ai.value;  // проценты уже есть
-      ssd1306_WriteString("L1:", Font_7x10, White);
-      if ((perc < 0)||(perc > (Level1_ai.value_max+5))){
-        ssd1306_SetCursor(21, 7);
-        ssd1306_WriteString("err", Font_11x18, White);
-        if(Fuel_level1_low.pos_out==GPIO_PIN_SET){
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY-=7;
-          DrawBitmap_32(buffer,White);
-        }
-      }else{
-        ssd1306_SetCursor(21, 0);
-
-        sprintf(numbuf, "%d", perc);
-        if((Fuel_level1_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==2)){
-          if(reverse_in_sequence==2){
-            ssd1306_WriteString(numbuf, Font_16x26, Black);
-            SSD1306.CurrentY+=4;
-#ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
-#else
-            ssd1306_WriteString("L", Font_11x18, Black);
-#endif
-          }else{
-            ssd1306_WriteString(numbuf, Font_16x26, White);
-            SSD1306.CurrentY+=4;
-#ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
-#else
-            ssd1306_WriteString("L", Font_11x18, Black);
-#endif
-          }
-        }else{
-          ssd1306_WriteString(numbuf, Font_16x26, Black);
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY=0;
-          DrawBitmap_32(buffer,White);
-          //ssd1306_WriteString("%", Font_11x18, Black);
-        }
-      }
-      if((reverse_in_sequence==2)||(reverse_in_sequence==3)){
-        if (analog_reverse & 0x01){
-            ssd1306_WriteString("REV", Font_7x10, White);
-        } else {
-            ssd1306_WriteString("NORM", Font_7x10, White);
-        }
-      }
+    // 1. Вывод текущего режима управления (LEVEL)
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString("CTRL MODE:", Font_7x10, White);
+    ssd1306_SetCursor(0, 12);
+    if (current_ctrl == LEVEL_OFF) {
+        ssd1306_WriteString("OFF", Font_11x18, White);
+    } else if (current_ctrl == LEVEL_ON) {
+        ssd1306_WriteString("MANUAL ON", Font_11x18, White);
+    } else if (current_ctrl == LEVEL_AUTO) {
+        ssd1306_WriteString("AUTOMATIC", Font_11x18, White);
     }
 
+    // 2. Вывод состояния автомата (Датчики и Ошибки)
+    ssd1306_SetCursor(0, 35);
+    ssd1306_WriteString("STATE:", Font_7x10, White);
+    ssd1306_SetCursor(0, 46);
     
-     
-    
-    // Линия 2
-    ssd1306_SetCursor(0, 51);
-    if (cal_ongoing_flag)
-    {
-      ssd1306_WriteString("L2:", Font_7x10, White);
-       ssd1306_SetCursor(21, 45);
-      ssd1306_WriteString("CAL", Font_11x18, White);
-    }
-    else
-    {
-      int perc = Level2_ai.value;
-      ssd1306_WriteString("L2:", Font_7x10, White);
-      if ((perc < 0)||(perc > (Level2_ai.value_max+5))){
-        ssd1306_SetCursor(21, 45);
-        ssd1306_WriteString("err", Font_11x18, White);
-        if(Fuel_level2_low.pos_out==GPIO_PIN_SET){
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY-=14;
-          DrawBitmap_32(buffer,White);
+    if (current_ctrl == LEVEL_AUTO) {
+        switch (auto_state) {
+            case AUTO_STATE_WAITING:
+                ssd1306_WriteString("EMPTY / WAIT", Font_7x10, White);
+                break;
+            case AUTO_STATE_LL_TRIGGERED:
+                ssd1306_WriteString("LEVEL LOW", Font_7x10, White);
+                break;
+            case AUTO_STATE_HH_TRIGGERED:
+                ssd1306_WriteString("LEVEL HIGH (PUMP)", Font_7x10, White);
+                break;
+            case AUTO_STATE_ERROR:
+                // Мигающая ошибка на экране
+                if (blynk_output) {
+                    ssd1306_WriteString("!!! ERR: SENSORS !!!", Font_7x10, White);
+                }
+                break;
         }
-      } else {
-        ssd1306_SetCursor(21, 37);
-        sprintf(numbuf, "%d", perc);
-        if((Fuel_level2_low.pos_out==GPIO_PIN_RESET)||(reverse_in_sequence==3)){
-          if(reverse_in_sequence==3){
-            ssd1306_WriteString(numbuf, Font_16x26, Black);
-            SSD1306.CurrentY+=4;
-#ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
-#else
-            ssd1306_WriteString("L", Font_11x18, Black);
-#endif
-          }else{
-            ssd1306_WriteString(numbuf, Font_16x26, White);
-            SSD1306.CurrentY+=4;
-#ifdef PRECENT
-            ssd1306_WriteString("%", Font_11x18, Black);
-#else
-            ssd1306_WriteString("L", Font_11x18, Black);
-#endif
-          }
-        }else{
-          ssd1306_WriteString(numbuf, Font_16x26, Black);
-          memcpy(buffer,gas,128);
-          SSD1306.CurrentY-=6;
-          DrawBitmap_32(buffer,White);
-          //ssd1306_WriteString("%", Font_11x18, Black);
-        }
-      }
-      if((reverse_in_sequence==2)||(reverse_in_sequence==3)){
-        if (analog_reverse & 0x02){
-          ssd1306_WriteString("REV", Font_7x10, White);
-        } else {
-          ssd1306_WriteString("NORM", Font_7x10, White);
-        }
-      }
+    } else if (current_ctrl == LEVEL_OFF && blynk_output) {
+        // Если выключен и активна фаза блинка — пишем предупреждение о простое/ошибке из логики
+        ssd1306_WriteString("SYSTEM DISABLED", Font_7x10, White);
+    } else {
+        ssd1306_WriteString("RUNNING", Font_7x10, White);
     }
 
+    // 3. Вольтметр (Справа на экране)
+    int volt_perc = Voltage.value;
+    if (volt_perc < Voltage.value_min) volt_perc = Voltage.value_min;
+    if (volt_perc > Voltage.value_max) volt_perc = Voltage.value_max;
+    sprintf(buf, "V: %d.%d", volt_perc / 10, volt_perc % 10);
+    ssd1306_SetCursor(85, 0);
+    ssd1306_WriteString(buf, Font_7x10, White);
     
-    // Справа — напряжение или иконка поворотника
-    if (current_blynk_flag == Blynk_off)
-    {
-      int volt_perc = Voltage.value;
-      if (volt_perc < Voltage.value_min) volt_perc = Voltage.value_min;
-      if (volt_perc > Voltage.value_max) volt_perc = Voltage.value_max;
-      uint8_t xxx=volt_perc/10;
-      uint8_t yyy=volt_perc%10;
-      sprintf(buf, "%d", xxx);
-      ssd1306_SetCursor(87, 20);
-      ssd1306_WriteString(buf, Font_11x18, White);
-      SSD1306.CurrentX-=2;
-      ssd1306_WriteString(".", Font_11x18, White);
-      SSD1306.CurrentX-=2;
-      sprintf(buf, "%d", yyy);
-      ssd1306_WriteString(buf, Font_11x18, White);
+    // Иконка работы реле (имитация светодиода на экране)
+    ssd1306_SetCursor(90, 25);
+    if (HAL_GPIO_ReadPin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin) == GPIO_PIN_SET) {
+        ssd1306_WriteString("[RELAY]", Font_7x10, White);
     }
-    else
-    {
-      switch (current_blynk_flag)
-      {
-      case Blynk_right:
-        if(blynk_output){
-          memcpy(buffer,arrow_right,240);
-        }else{
-          memcpy(buffer,arrow_right_fill,240);
-        }
-        break;
-      case Blynk_left:
-        if(blynk_output){
-          memcpy(buffer,arrow_left,240);
-        }else{
-          memcpy(buffer,arrow_left_fill,240);
-        }
-        break;
-      case Blynk_warning:
-        if(blynk_output){
-          memcpy(buffer,warning_triangle,240);
-        }else{
-          memcpy(buffer,warning_triangle_fill,240);
-        }
-        break;
-      default:
-        break;
-      }
-    ssd1306_SetCursor(80, 8);
-    DrawBitmap(buffer,White);   
-    }
-    if(ssd1306_UpdateScreen()==-1){
+
+    // Обновление экрана с авто-восстановлением шины I2C в случае сбоя
+    if(ssd1306_UpdateScreen() == -1){
       HAL_I2C_DeInit(&hi2c1);
       MX_I2C1_Init();
       ssd1306_HardResetAndReinit();
@@ -576,34 +397,13 @@ void Start_Led_task(void *argument)
 void StartBlynkTask(void *argument)
 {
   /* USER CODE BEGIN StartBlynkTask */
-  
-  /* Infinite loop */
   for(;;)
   {
-    osDelay(500); 
+    osDelay(500); // Интервал изменения состояния (период 1 сек)
     blynk_output = !blynk_output;
-    GPIO_PinState left_pin  = GPIO_PIN_RESET;
-    GPIO_PinState right_pin = GPIO_PIN_RESET;
-    if (blynk_output) 
-    {
-      switch (current_blynk_flag)
-      {
-      case Blynk_left:
-        left_pin = GPIO_PIN_SET;
-        break;
-      case Blynk_right:
-        right_pin = GPIO_PIN_SET;
-        break;
-      case Blynk_warning:
-        left_pin  = GPIO_PIN_SET;
-        right_pin = GPIO_PIN_SET;
-        break;
-      default:
-        break;
-      }
-    }
-    HAL_GPIO_WritePin(Left_out_GPIO_GPIO_Port, Left_out_GPIO_Pin, left_pin);
-    HAL_GPIO_WritePin(Right_out_gpio_GPIO_Port, Right_out_gpio_Pin, right_pin);
+    
+    // Дублируем блинк на физический диод платы PC13, если требуется
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
   }
   /* USER CODE END StartBlynkTask */
 }
@@ -633,6 +433,7 @@ void buttin_proc_without_tim(struct button_without_fix *button,GPIO_TypeDef *GPI
 
 
 
+
 // линеаризация данных с АЦП
 void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value)
 {
@@ -649,194 +450,21 @@ void AnalogSensor_Update(AnalogSensor_t* sensor, uint16_t new_adc_value)
                      (sensor->value_max - sensor->value_min);
     scaled /= (sensor->adc_max - sensor->adc_min);
     scaled += sensor->value_min;
-
-//    // Ограничим в пределах value_min и value_max
-//    if (scaled < sensor->value_min) scaled = sensor->value_min;
-//    if (scaled > sensor->value_max) scaled = sensor->value_max;
-
     sensor->value = (int16_t)scaled;
 }
 
-void AnalogSensor_CalibrateMinMax(AnalogSensor_t* sensor, uint16_t new_adc_value)
-{
-    if (new_adc_value < sensor->adc_min || sensor->adc_min == 0xFFFF)
-    {
-        sensor->adc_min = new_adc_value;
-    }
-
-    if (new_adc_value > sensor->adc_max)
-    {
-        sensor->adc_max = new_adc_value;
-    }
-}
-
-void AnalogSensor_StartCalibration(AnalogSensor_t* sensor)
-{
-  if(sensor->adc_min<5000){
-    sensor->adc_min+= 1000;       // максимально возможное значение для старта поиска минимума
-  }
-  if(sensor->adc_max>1500){
-    sensor->adc_max-= 1000;      // минимально возможное значение для старта поиска максимума
-  }
-}
-
-
-uint32_t Flash_write(){
-  taskENTER_CRITICAL();
-  uint32_t flash_ret;
-  HAL_FLASH_Unlock();
-  Erase.TypeErase=FLASH_TYPEERASE_PAGES;
-  Erase.PageAddress=User_Page_Adress[0];
-  Erase.NbPages=1;  //1kBytes
-  //  Delay_switching backlight_on tooth_sp Deept_of_cut_mm Deept_of_cut_pulses M1
-  if (HAL_FLASHEx_Erase(&Erase, &flash_ret) != HAL_OK) {
-    HAL_FLASH_Lock();
-    taskEXIT_CRITICAL();
-    
-    return flash_ret;
-  }
-  // Упаковка данных кнопок (9 бит)
-  
-  // Запись данных
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[0], Voltage.adc_max<<16|Voltage.adc_min);
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[1], Voltage.value_max<<16|Voltage.value_min); 
-  
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[2], Level1_ai.adc_max<<16|Level1_ai.adc_min);
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[3], Level1_ai.value_max<<16|Level1_ai.value_min);
-  
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[4], Level2_ai.adc_max<<16|Level2_ai.adc_min);
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, User_Page_Adress[5], Level2_ai.value_max<<16|Level2_ai.value_min);
-  
-  HAL_FLASH_Lock();
-  taskEXIT_CRITICAL();
-  return 0xFFFFFFFF; // Успешная запись
-  
-}
-
-void Flash_read(void) {
-    uint32_t temp;
-    
-    // Проверка: если первая ячейка пустая — загрузить дефолтные значения
-    temp = flash_read(User_Page_Adress[0]);
-    if (temp == 0xFFFFFFFF) {
-        DefaultAnalogSensors();
-        Flash_write();
-        return;
-    }
-
-    // ---- Voltage ----
-    Voltage.adc_max   = (temp >> 16) & 0xFFFF;
-    Voltage.adc_min   = temp & 0xFFFF;
-
-    temp = flash_read(User_Page_Adress[1]);
-    Voltage.value_max = (temp >> 16) & 0xFFFF;
-    Voltage.value_min = temp & 0xFFFF;
-
-    // ---- Level1_ai ----
-    temp = flash_read(User_Page_Adress[2]);
-    Level1_ai.adc_max   = (temp >> 16) & 0xFFFF;
-    Level1_ai.adc_min   = temp & 0xFFFF;
-
-    temp = flash_read(User_Page_Adress[3]);
-    Level1_ai.value_max = (temp >> 16) & 0xFFFF;
-    Level1_ai.value_min = temp & 0xFFFF;
-
-    // ---- Level2_ai ----
-    temp = flash_read(User_Page_Adress[4]);
-    Level2_ai.adc_max   = (temp >> 16) & 0xFFFF;
-    Level2_ai.adc_min   = temp & 0xFFFF;
-
-    temp = flash_read(User_Page_Adress[5]);
-    Level2_ai.value_max = (temp >> 16) & 0xFFFF;
-    Level2_ai.value_min = temp & 0xFFFF;
-}
-
-void DefaultAnalogSensors(void)
-{
-    Voltage.adc_min   = 1;
-    Voltage.adc_max   = 4096;
-    Voltage.value_min = 0;
-    Voltage.value_max = 331;
-    Voltage.adc_raw   = 0;
-    Voltage.value     = 0;
-
-    Level1_ai.adc_min   = 20;
-    Level1_ai.adc_max   = 6000;
-    Level1_ai.value_min =0;
-    Level1_ai.value_max = 100;
-    Level1_ai.adc_raw   = 0;
-    Level1_ai.value     = 0;
-
-    Level2_ai.adc_min   = 20;
-    Level2_ai.adc_max   = 6000;
-    Level2_ai.value_min = 0;
-    Level2_ai.value_max = 100;
-    Level2_ai.adc_raw   = 0;
-    Level2_ai.value     = 0;
-}
-
-
-void ADC_ProcessNewSamples(void)
-{
-    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ++ch)
-    {
+void ADC_ProcessNewSamples(void) {
+    for (uint8_t ch = 0; ch < ADC_CHANNEL_COUNT; ch++) {
         adc_history[ch][adc_index] = ADC_dma[ch];
-    }
-
-    adc_index++;
-    if (adc_index >= ADC_AVG_DEPTH)
-        adc_index = 0;
-
-    // После накопления всех выборок можно усреднять
-    for (int ch = 0; ch < ADC_CHANNEL_COUNT; ++ch)
-    {
         uint32_t sum = 0;
-        for (int i = 0; i < ADC_AVG_DEPTH; ++i)
-        {
+        for (uint8_t i = 0; i < ADC_AVG_DEPTH; i++) {
             sum += adc_history[ch][i];
         }
         adc_filtered[ch] = sum / ADC_AVG_DEPTH;
     }
+    adc_index = (adc_index + 1) % ADC_AVG_DEPTH;
 }
 
-
-
-uint16_t R_From_ADC(uint16_t adc)
-{
-    /* Границы */
-    if (adc >= adc_table[0])
-    {
-        return r20_table[0];
-    }
-
-    if (adc <= adc_table[11])
-    {
-        return r20_table[11];
-    }
-
-    /* Поиск сегмента */
-    for (uint8_t i = 0; i < 11; i++)
-    {
-        if ((adc <= adc_table[i]) && (adc >= adc_table[i + 1]))
-        {
-            uint16_t x0 = adc_table[i];
-            uint16_t x1 = adc_table[i + 1];
-
-            uint16_t y0 = r20_table[i];
-            uint16_t y1 = r20_table[i + 1];
-
-            /* Интерполяция:
-               y = y0 + (x0 - adc) * (y1 - y0) / (x0 - x1)
-            */
-            uint32_t num = (uint32_t)(x0 - adc) * (y1 - y0);
-            uint32_t den = (uint32_t)(x0 - x1);
-
-            return (uint16_t)(y0 + num / den);
-        }
-    }
-
-    return 0; // не должно сюда попасть
-}
 
 /* USER CODE END Application */
 
